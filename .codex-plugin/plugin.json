@@ -1,0 +1,6 @@
+{
+  "name": "rabanito-second-brain",
+  "version": "0.1.0",
+  "description": "Local, bounded retrieval and maintenance workflows for the Rabanito Second Brain.",
+  "skills": "./skills/"
+}

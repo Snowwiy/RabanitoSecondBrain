@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+import json
+import ast
+import unittest
+from pathlib import Path
+
+from scripts.publication_audit import inspect_text
+
+
+class PublicationTests(unittest.TestCase):
+    def test_generated_and_private_paths_are_rejected_even_if_tracked(self) -> None:
+        for path in ("data/metadata.json", "knowledge/private.md", "config/settings.json",
+                     "tests/.test-temp/note.md", "config/.env", "other/index.sqlite3-wal"):
+            with self.subTest(path=path):
+                self.assertIn("forbidden_path", {i["rule"] for i in inspect_text(path, b"{}")})
+
+    def test_detector_does_not_print_credential_values(self) -> None:
+        candidate = "gh" + "p_" + "Z" * 36
+        issues = inspect_text("rabanito/example.py", candidate.encode())
+        self.assertEqual(issues[0]["rule"], "github_token")
+        self.assertNotIn(candidate, json.dumps(issues))
+
+    def test_reviewed_fixture_is_not_a_file_wide_exemption(self) -> None:
+        candidate = "-----BEGIN " + "PRIVATE KEY-----"
+        issues = inspect_text("tests/test_core.py", repr(candidate).encode())
+        self.assertIn("private_key", {i["rule"] for i in issues})
+
+    def test_new_literal_on_reviewed_fixture_line_is_still_reported(self) -> None:
+        from scripts.publication_audit import REVIEWED_TEST_LITERALS
+        import hashlib
+        path = Path(__file__).with_name("test_core.py")
+        approved = next(node.value for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+                        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                        and hashlib.sha256(node.value.encode()).hexdigest() in REVIEWED_TEST_LITERALS["tests/test_core.py"])
+        candidate = "-----BEGIN " + "PRIVATE KEY-----"
+        payload = (repr(approved) + "; " + repr(candidate)).encode()
+        issues = inspect_text("tests/test_core.py", payload)
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0]["rule"], "private_key")
+
+    def test_binary_oversize_and_unreviewed_types_are_rejected(self) -> None:
+        for path, payload, expected in (("web/a.js", b"a\x00b", "binary_content"),
+                                        ("docs/a.md", b"a" * (2 * 1024 * 1024 + 1), "oversize"),
+                                        ("web/a.bin", b"abc", "unreviewed_file_type")):
+            self.assertIn(expected, {i["rule"] for i in inspect_text(path, payload)})
+
+    def test_example_configuration_has_only_local_portable_sources(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        example = json.loads((root / "config/settings.example.json").read_text(encoding="utf-8"))
+        self.assertEqual(example["project_root"], ".")
+        self.assertEqual(example["dashboard_host"], "127.0.0.1")
+        self.assertEqual(example["additional_sources"], [])
+        self.assertFalse(example["cyber"]["cadence"]["enabled"])
+        for key in ("vault_root", "projects_root", "database_path", "knowledge_dir", "data_dir"):
+            self.assertFalse(Path(example[key]).is_absolute())

@@ -1,0 +1,16 @@
+[build-system]
+requires = []
+build-backend = "setuptools.build_meta:__legacy__"
+
+[project]
+name = "rabanito-second-brain"
+version = "0.1.0"
+description = "Local, provider-independent knowledge index for Obsidian and Hermes projects."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+rabanito = "rabanito.cli:main"
+
+[tool.setuptools]
+packages = ["rabanito"]

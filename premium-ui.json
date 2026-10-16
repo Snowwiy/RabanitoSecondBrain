@@ -1,0 +1,17 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["web"],
+  "locale": "es-MX",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": ["Select/Listbox", "Form", "Scrollbar", "Toast", "CRUD"],
+  "ownership": {"Select/Listbox": "native"},
+  "requiredCommands": ["unit", "ui"],
+  "commands": {
+    "unit": "python -B -m unittest discover -s tests -q",
+    "ui": "node --test tests/test_cyber_ui.mjs tests/test_graph_filter.mjs"
+  },
+  "evidence": {
+    "crudFullFlow": "tests/test_cyber.py",
+    "failurePaths": "tests/test_cyber_ui.mjs"
+  }
+}

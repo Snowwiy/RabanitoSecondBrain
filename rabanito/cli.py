@@ -1,0 +1,428 @@
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+from . import __version__
+from .cadence import run_index_watch
+from .capabilities import build_link_suggestions, collect_audit, level_up, write_audit
+from .changes import recent_document_changes, resolve_active_project_root
+from .config import default_config_path, load_settings, save_settings
+from .cyber import cyber_status, get_vulnerability, search_vulnerabilities, sync_source
+from .cyber.store import vulnerability_context
+from .cyber.cadence import run_cyber_watch
+from .db import Database, restore_database
+from .decisions import add_memory_record, list_memory_records
+from .graph import graph_edges_for_nodes
+from .indexer import _index_lock, discover_projects, index_all, prune_inactive_search_payload
+from .interview import conduct_interview
+from .onboard import approve_source, preview_source
+from .search import (
+    SCAN_SOURCE_SUMMARY_MAX_CHARS, get_document, project_scan_summary, related_documents,
+    retrieve_context, search_documents, stats,
+)
+from .server import serve_dashboard
+from .security import get_security_entry, index_security_catalog, search_security, security_context
+from .public_graph import public_graph
+from .dependencies import inspect_manifest, inspect_sbom
+from .coding_memory import recurring_patterns, similar_experiences
+from .cyber.pending import discard_pending_window
+from .utils import iso_now, safe_relative, write_json_atomic
+from .visibility import project_visibility_sql, register_project_visibility
+
+
+def _json(value: Any) -> None:
+    rendered = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    encoding = getattr(sys.stdout, "encoding", None)
+    if encoding:
+        try:
+            rendered.encode(encoding)
+        except (LookupError, UnicodeEncodeError):
+            # Keep JSON valid and readable on Windows consoles whose active
+            # code page cannot represent every character in indexed notes.
+            rendered = json.dumps(value, ensure_ascii=True, indent=2, default=str)
+    sys.stdout.write(rendered + "\n")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="rabanito", description="Rabanito Second Brain: local index, retrieval, graph and maintenance tools")
+    parser.add_argument("--config", type=Path, default=None, help=f"settings JSON (default: {default_config_path()})")
+    parser.add_argument("--version", action="version", version=__version__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    coding = sub.add_parser("coding", help="offline retrieval of reviewed coding experiences; no training or automatic confirmation")
+    coding_actions = coding.add_subparsers(dest="coding_action", required=True)
+    coding_similar = coding_actions.add_parser("similar")
+    coding_similar.add_argument("query", nargs="?", default="")
+    coding_similar.add_argument("--project")
+    coding_similar.add_argument("--technology")
+    coding_similar.add_argument("--limit", type=int, default=5)
+    coding_similar.add_argument("--max-chars", type=int, default=6000)
+    coding_patterns = coding_actions.add_parser("patterns")
+    coding_patterns.add_argument("--project")
+    coding_patterns.add_argument("--limit", type=int, default=10)
+
+    dependency = sub.add_parser("dependency", help="read-only local SBOM assessment; never sends package names")
+    dependency_actions = dependency.add_subparsers(dest="dependency_action", required=True)
+    dependency_inspect = dependency_actions.add_parser("inspect", help="CycloneDX/SPDX JSON from an active authorized project")
+    dependency_inspect.add_argument("--project", required=True, help="exact active project name or root")
+    dependency_inventory = dependency_inspect.add_mutually_exclusive_group(required=True)
+    dependency_inventory.add_argument("--sbom", help="project-relative JSON path; no traversal or symlinks")
+    dependency_inventory.add_argument("--manifest", help="project-relative package-lock.json or requirements*.txt; never follows includes")
+
+    security = sub.add_parser("security", help="local cited standards, controls and Zero Trust knowledge")
+    security_actions = security.add_subparsers(dest="security_action", required=True)
+    security_actions.add_parser("index", help="index the reviewed local catalog; no network")
+    security_get = security_actions.add_parser("get")
+    security_get.add_argument("identifier")
+    security_search = security_actions.add_parser("search")
+    security_search.add_argument("query", nargs="?", default="")
+    security_search.add_argument("--framework")
+    security_search.add_argument("--kind", choices=["framework", "control", "concept", "reference"])
+    security_search.add_argument("--status", choices=["published", "historical", "draft", "rolling"])
+    security_search.add_argument("--limit", type=int, default=20)
+    security_search.add_argument("--offset", type=int, default=0)
+    security_context_parser = security_actions.add_parser("context")
+    security_context_parser.add_argument("query")
+    security_context_parser.add_argument("--max-chars", type=int, default=6000)
+    security_context_parser.add_argument("--limit", type=int, default=8)
+
+    cyber = sub.add_parser("cyber", help="public vulnerability knowledge; queries work offline")
+    cyber_actions = cyber.add_subparsers(dest="cyber_action", required=True)
+    cyber_pending = cyber_actions.add_parser("pending", help="inspect unpublished NVD staging; explicit backed-up discard for recovery")
+    cyber_pending.add_argument("--discard", action="store_true")
+    cyber_pending.add_argument("--approve", action="store_true")
+    cyber_actions.add_parser("status", help="connector state, freshness and local counts")
+    cyber_watch = cyber_actions.add_parser("watch", help="opt-in foreground public-source updates; disabled by default")
+    cyber_watch.add_argument("--start", action="store_true", help="explicitly start foreground cadence without changing settings")
+    cyber_watch.add_argument("--cycles", type=int)
+    cyber_sync = cyber_actions.add_parser("sync", help="explicit bounded public GET requests; no local notes sent")
+    cyber_sync.add_argument("--source", required=True, choices=["kev", "nvd", "epss", "osv"])
+    cyber_sync.add_argument("--id", action="append", default=None, help="public CVE/advisory identifier, repeatable")
+    cyber_get = cyber_actions.add_parser("get", help="retrieve complete local observations with provenance")
+    cyber_get.add_argument("identifier")
+    cyber_search = cyber_actions.add_parser("search", help="local FTS, explicit evidence and compact results")
+    cyber_search.add_argument("query", nargs="?", default="")
+    cyber_search.add_argument("--source", choices=["kev", "nvd", "epss", "osv"])
+    cyber_search.add_argument("--kev", action="store_true")
+    cyber_search.add_argument("--limit", type=int, default=20)
+    cyber_search.add_argument("--offset", type=int, default=0)
+    cyber_search.add_argument("--since", help="ISO date: last modification at provider")
+    cyber_search.add_argument("--min-epss", type=float)
+    cyber_search.add_argument("--sort", choices=["risk", "modified", "published"], default="risk")
+    cyber_context = cyber_actions.add_parser("context", help="bounded offline vulnerability fragments with official citations")
+    cyber_context.add_argument("query")
+    cyber_context.add_argument("--max-chars", type=int, default=6000)
+    cyber_context.add_argument("--limit", type=int, default=5)
+
+    index = sub.add_parser("index", help="incrementally index configured sources")
+    index.add_argument("--force", action="store_true", help="re-read unchanged files")
+
+    prune_cache = sub.add_parser(
+        "prune-search-cache", help="preview or explicitly purge text cache for deleted/skipped documents",
+    )
+    prune_cache.add_argument("--apply", action="store_true", help="create a verified backup, then purge inactive search text")
+    prune_cache.add_argument("--yes", action="store_true", help="confirm the explicitly destructive --apply operation")
+
+    watch = sub.add_parser("watch", help="opt-in foreground index loop; no service or scheduled task is installed")
+    watch.add_argument("--interval-minutes", type=int, default=None, help="sync interval (5 to 10080 minutes; defaults to config)")
+    watch.add_argument("--cycles", type=int, default=None, help="stop after this many scans; omit to run until Ctrl+C")
+
+    search = sub.add_parser("search", help="search documents with SQLite FTS5")
+    search.add_argument("query")
+    search.add_argument("--limit", type=int)
+    search.add_argument("--source")
+    search.add_argument("--category")
+    search.add_argument("--project")
+    search.add_argument("--tag", help="exact indexed tag; accepts an optional leading #")
+
+    context = sub.add_parser("context", help="retrieve bounded fragments with citations")
+    context.add_argument("query")
+    context.add_argument("--limit", type=int)
+    context.add_argument("--max-chars", type=int)
+    context.add_argument("--source")
+    context.add_argument("--category")
+    context.add_argument("--project")
+    context.add_argument("--tag", help="exact indexed tag; accepts an optional leading #")
+
+    sub.add_parser("stats", help="show index statistics")
+    changes = sub.add_parser("changes", help="show recent indexed document changes")
+    changes.add_argument("--limit", type=int, default=20)
+    changes.add_argument("--project", help="active project name or exact root path")
+    audit = sub.add_parser("audit", help="audit coverage, duplicates, links and stale content")
+    audit.add_argument("--write", action="store_true", help="write a dated Markdown and JSON report")
+    sub.add_parser("link", help="create explicit-link inventory and non-factual link suggestions")
+    sub.add_parser("level-up", help="produce concrete recommendations from the latest audit")
+
+    onboard = sub.add_parser("onboard", help="preview or approve a local knowledge source")
+    onboard.add_argument("--path", type=Path, required=True)
+    onboard.add_argument("--kind", default="local")
+    onboard.add_argument("--name")
+    onboard.add_argument("--approve", action="store_true")
+
+    interview = sub.add_parser("interview", help="guided capture; writes only after explicit APROBAR")
+    interview.add_argument("--topic", required=True)
+
+    dashboard = sub.add_parser("dashboard", help="serve the local dashboard on loopback")
+    dashboard.add_argument("--host", default=None)
+    dashboard.add_argument("--port", type=int, default=None)
+
+    doc = sub.add_parser("doc", help="show one indexed document and its relationships")
+    doc.add_argument("document_id", type=int)
+    related = sub.add_parser("related", help="show explicit and suggested relationships")
+    related.add_argument("document_id", type=int)
+
+    projects = sub.add_parser("projects", help="discover project metadata without indexing source code")
+    projects.add_argument("--json", action="store_true")
+    project_policy = projects.add_mutually_exclusive_group()
+    project_policy.add_argument("--exclude", help="exclude a project name or path and synchronize the index")
+    project_policy.add_argument("--include", help="remove a project exclusion and synchronize the index")
+
+    decision = sub.add_parser("decision", help="create or list traceable project memory records")
+    decision_actions = decision.add_subparsers(dest="decision_action", required=True)
+    decision_add = decision_actions.add_parser("add", help="add a reviewed decision/fact/proposal/hypothesis")
+    decision_add.add_argument("--project", required=True, help="exact project name or project root path")
+    decision_add.add_argument("--problem", required=True)
+    decision_add.add_argument("--statement", required=True, help="decision, fact, proposal, or hypothesis")
+    decision_add.add_argument("--record-type", choices=["decision", "fact", "proposal", "hypothesis"], default="decision")
+    decision_add.add_argument("--status", choices=["proposed", "confirmed", "rejected", "superseded"], default="proposed")
+    decision_add.add_argument("--reason", default="")
+    decision_add.add_argument("--alternative", action="append", default=[])
+    decision_add.add_argument("--component", action="append", default=[])
+    decision_add.add_argument("--technology", action="append", default=[])
+    decision_add.add_argument("--test", action="append", default=[])
+    decision_add.add_argument("--result", default="", help="observed outcome; do not infer it from a test command")
+    decision_add.add_argument(
+        "--evidence", action="append", default=[],
+        help="local path or project:/projects:/obsidian:/internal: reference; projects: explicitly cites another project",
+    )
+    decision_add.add_argument("--validation", choices=["pending", "passed", "failed", "not_applicable"], default="pending")
+    decision_add.add_argument("--date", help="record date YYYY-MM-DD; defaults to today")
+    decision_list = decision_actions.add_parser("list", help="list indexed memory records")
+    decision_list.add_argument("--project")
+    decision_list.add_argument("--limit", type=int, default=50)
+    decision_list.add_argument("--record-type", choices=["decision", "fact", "proposal", "hypothesis"])
+    decision_list.add_argument("--status", choices=["proposed", "confirmed", "rejected", "superseded"])
+    decision_list.add_argument("--query", default="", help="search indexed decision content with local FTS")
+
+    graph = sub.add_parser("graph", help="export graph data from the real index")
+    graph.add_argument("--limit", type=int, default=500)
+    graph.add_argument("--suggestions", action="store_true")
+    graph.add_argument("--domain", choices=["documents", "cyber", "security"], default="documents")
+    graph.add_argument("--query", default="")
+
+    backup = sub.add_parser("backup", help="create a local SQLite backup")
+    backup.add_argument("--path", type=Path, default=None)
+    restore = sub.add_parser("restore", help="restore a local SQLite backup; explicit --yes required")
+    restore.add_argument("path", type=Path)
+    restore.add_argument("--yes", action="store_true")
+    return parser
+
+
+def _graph_export(settings, limit: int, suggestions: bool) -> dict[str, Any]:
+    limit = min(max(int(limit), 0), 2000)
+    with Database(settings.database_path) as db:
+        register_project_visibility(db, settings)
+        total_matches = int(db.one(
+            "SELECT COUNT(*) AS total FROM documents d WHERE d.status='active' AND "
+            + project_visibility_sql("d")
+        )["total"])
+        nodes = db.query(
+            "SELECT d.document_id,d.title,d.source_kind,d.category,d.project_name,d.project_root_path,d.relative_path,d.mtime_iso "
+            "FROM documents d WHERE d.status='active' AND " + project_visibility_sql("d") +
+            " ORDER BY d.document_id LIMIT ?", (limit,),
+        )
+        node_ids = {int(row["document_id"]) for row in nodes}
+        edges = graph_edges_for_nodes(db, node_ids, suggestions, include_suggestion_scores=False)
+    return {
+        "nodes": [dict(row) for row in nodes],
+        "edges": edges,
+        "node_limit": limit,
+        "total_matches": total_matches,
+        "truncated": total_matches > limit,
+    }
+
+
+def main(argv: list[str] | None = None) -> None:
+    # The CLI contract is UTF-8 for agent/PowerShell pipes, independent of the
+    # Windows ANSI code page. Respect caller-owned streams used by embedders.
+    if sys.stdout is sys.__stdout__ and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    args = build_parser().parse_args(argv)
+    settings = load_settings(args.config)
+    if args.command == "coding":
+        try:
+            result = (similar_experiences(settings, args.query, project=args.project, technology=args.technology,
+                                          limit=args.limit, max_chars=args.max_chars) if args.coding_action == "similar" else
+                      recurring_patterns(settings, project=args.project, limit=args.limit))
+            _json(result)
+        except ValueError as exc:
+            _json({"error": str(exc)})
+            raise SystemExit(1) from None
+    elif args.command == "dependency":
+        try:
+            _json(inspect_sbom(settings, args.project, args.sbom) if args.sbom else inspect_manifest(settings, args.project, args.manifest))
+        except (ValueError, OSError) as exc:
+            _json({"error": str(exc) if isinstance(exc, ValueError) else "sbom_read_failed"})
+            raise SystemExit(1) from None
+    elif args.command == "security":
+        if args.security_action == "index":
+            _json(index_security_catalog(settings))
+        elif args.security_action == "get":
+            _json(get_security_entry(settings, args.identifier) or {"error": "not found locally"})
+        elif args.security_action == "context":
+            _json(security_context(settings, args.query, max_chars=args.max_chars, limit=args.limit))
+        else:
+            _json(search_security(settings, args.query, framework=args.framework, kind=args.kind, edition_status=args.status, limit=args.limit, offset=args.offset))
+    elif args.command == "cyber":
+        if args.cyber_action == "pending":
+            if args.approve and not args.discard:
+                raise SystemExit("Use --discard --approve together; without them this command only previews.")
+            _json(discard_pending_window(settings, approve=args.discard and args.approve))
+        elif args.cyber_action == "status":
+            _json(cyber_status(settings))
+        elif args.cyber_action == "watch":
+            result = run_cyber_watch(settings, start=args.start, cycles=args.cycles)
+            _json(result)
+            if result["status"] == "partial":
+                raise SystemExit(1)
+        elif args.cyber_action == "sync":
+            result = sync_source(settings, args.source, args.id)
+            _json(result)
+            if result["status"] in {"error", "partial"}:
+                raise SystemExit(1)
+        elif args.cyber_action == "get":
+            _json(get_vulnerability(settings, args.identifier) or {"error": "not found locally"})
+        elif args.cyber_action == "context":
+            _json(vulnerability_context(settings, args.query, max_chars=args.max_chars, limit=args.limit))
+        else:
+            _json(search_vulnerabilities(settings, args.query, source=args.source, kev_only=args.kev,
+                                         limit=args.limit, offset=args.offset, since=args.since, min_epss=args.min_epss, sort=args.sort))
+    elif args.command == "index":
+        _json(index_all(settings, force=args.force))
+    elif args.command == "prune-search-cache":
+        if args.apply and not args.yes:
+            raise SystemExit("La purga modifica caché derivada y crea un respaldo; repite con --apply --yes tras revisar la vista previa.")
+        if args.yes and not args.apply:
+            raise SystemExit("--yes solo se admite junto con --apply.")
+        _json(prune_inactive_search_payload(settings, apply=args.apply))
+    elif args.command == "watch":
+        try:
+            run_index_watch(settings, args.interval_minutes, args.cycles)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
+    elif args.command == "search":
+        _json(search_documents(settings, args.query, args.limit, args.source, args.category, args.project, args.tag))
+    elif args.command == "context":
+        _json(retrieve_context(settings, args.query, args.limit, args.max_chars, args.source, args.category, args.project, args.tag))
+    elif args.command == "stats":
+        result = stats(settings, latest_scan_source_summary_limit=SCAN_SOURCE_SUMMARY_MAX_CHARS + 1)
+        latest_scan = result.get("latest_scan")
+        result["latest_scan"] = project_scan_summary(latest_scan) if isinstance(latest_scan, dict) else None
+        _json(result)
+    elif args.command == "changes":
+        try:
+            project_root = resolve_active_project_root(settings, args.project) if args.project else None
+            _json({"changes": recent_document_changes(settings, args.limit, project_root)})
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
+    elif args.command == "audit":
+        _json(write_audit(settings) if args.write else collect_audit(settings))
+    elif args.command == "link":
+        _json(build_link_suggestions(settings))
+    elif args.command == "level-up":
+        _json(level_up(settings))
+    elif args.command == "onboard":
+        result = approve_source(settings, args.path, args.kind, args.name) if args.approve else preview_source(settings, args.path, args.kind)
+        _json(result)
+    elif args.command == "interview":
+        result = conduct_interview(settings, args.topic)
+        if result.get("approved"):
+            _json({"interview": result, "index": index_all(settings)})
+        else:
+            _json({"interview": result})
+    elif args.command == "dashboard":
+        serve_dashboard(settings, args.host, args.port)
+    elif args.command == "doc":
+        result = get_document(settings, args.document_id)
+        _json(result or {"error": "not found"})
+    elif args.command == "related":
+        _json(related_documents(settings, args.document_id))
+    elif args.command == "projects":
+        if args.exclude:
+            value = args.exclude.strip()
+            candidate = Path(value)
+            if candidate.is_absolute():
+                resolved = candidate.resolve(strict=False)
+                if safe_relative(resolved, settings.projects_root) is None:
+                    raise SystemExit("La ruta de exclusión debe estar bajo projects_root.")
+                value = str(resolved)
+            elif any(part in {".", ".."} for part in value.replace("\\", "/").split("/")):
+                raise SystemExit("Usa un nombre de proyecto simple o una ruta absoluta dentro de projects_root.")
+            excluded = settings.raw.setdefault("excluded_projects", [])
+            if not any(str(item).casefold() == value.casefold() for item in excluded):
+                excluded.append(value)
+            save_settings(settings)
+            _json({"excluded_projects": excluded, "index": index_all(settings)})
+        elif args.include:
+            value = args.include.strip()
+            settings.raw["excluded_projects"] = [item for item in settings.raw.get("excluded_projects", []) if str(item).casefold() != value.casefold()]
+            save_settings(settings)
+            _json({"excluded_projects": settings.raw["excluded_projects"], "index": index_all(settings)})
+        else:
+            with Database(settings.database_path) as db:
+                result = discover_projects(settings, db)
+            _json(result)
+    elif args.command == "decision" and args.decision_action == "add":
+        index_all(settings)
+        record = add_memory_record(
+            settings, project=args.project, problem=args.problem, statement=args.statement,
+            record_type=args.record_type, status=args.status, reason=args.reason,
+            alternatives=args.alternative, components=args.component, technologies=args.technology,
+            tests=args.test, evidence=args.evidence, result=args.result,
+            validation=args.validation, recorded_date=args.date,
+        )
+        record["index"] = index_all(settings)
+        _json(record)
+    elif args.command == "decision" and args.decision_action == "list":
+        _json(list_memory_records(
+            settings, project=args.project, limit=args.limit,
+            record_type=args.record_type, status=args.status, query=args.query,
+        ))
+    elif args.command == "graph":
+        _json(_graph_export(settings, args.limit, args.suggestions) if args.domain == "documents"
+              else public_graph(settings, args.domain, limit=args.limit, query=args.query))
+    elif args.command == "backup":
+        target = args.path or (settings.data_dir / "backups" / f"rabanito-{iso_now().replace(':', '').replace('+00:00', 'Z').replace('-', '')}.db")
+        with Database(settings.database_path) as db:
+            db.backup(target)
+        _json({"backup": str(target), "database": str(settings.database_path)})
+    elif args.command == "restore":
+        backup_path = args.path.resolve(strict=True)
+        if not args.yes:
+            raise SystemExit("Restaurar sobrescribe el índice local. Repite con --yes si estás seguro.")
+        if backup_path.suffix.casefold() != ".db":
+            raise SystemExit("El respaldo debe ser un archivo .db")
+        settings.database_path.parent.mkdir(parents=True, exist_ok=True)
+        with _index_lock(settings):
+            sidecars = (Path(str(settings.database_path) + "-wal"), Path(str(settings.database_path) + "-shm"))
+            if any(path.exists() for path in sidecars):
+                raise SystemExit("La base está activa; cierra el dashboard/escritores antes de restaurar.")
+            previous_backup = None
+            if settings.database_path.exists():
+                previous_backup = settings.data_dir / "backups" / f"pre-restore-{iso_now().replace(':', '').replace('+00:00', 'Z').replace('-', '')}.db"
+                with Database(settings.database_path) as db:
+                    db.backup(previous_backup)
+            restore_database(backup_path, settings.database_path)
+        _json({
+            "restored": str(backup_path),
+            "database": str(settings.database_path),
+            "pre_restore_backup": str(previous_backup) if previous_backup else None,
+        })
+
+
+if __name__ == "__main__":
+    main()

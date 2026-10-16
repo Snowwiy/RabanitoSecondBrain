@@ -1,0 +1,2 @@
+# Core runtime intentionally has no third-party dependencies.
+# Optional future adapters must be documented and installed explicitly.

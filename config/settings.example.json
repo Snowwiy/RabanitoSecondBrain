@@ -1,0 +1,206 @@
+{
+  "project_root": ".",
+  "vault_root": "sources/obsidian",
+  "projects_root": "sources/projects",
+  "database_path": "data/rabanito.db",
+  "data_dir": "data",
+  "knowledge_dir": "knowledge",
+  "max_search_results": 20,
+  "max_context_chars": 12000,
+  "stale_days": 180,
+  "max_document_bytes": 2097152,
+  "audit_index_check_max_documents": 2000,
+  "audit_index_check_max_bytes": 67108864,
+  "audit_contradiction_max_documents": 2000,
+  "audit_contradiction_max_bytes": 67108864,
+  "audit_contradiction_max_claims": 100000,
+  "index_lock_timeout_seconds": 30,
+  "cadence": {
+    "interval_minutes": 60
+  },
+  "cyber": {
+    "max_pages": 3,
+    "nvd_page_size": 500,
+    "nvd_initial_days": 1,
+    "nvd_window_minutes": 60,
+    "epss_target_limit": 100,
+    "osv_ids": [],
+    "cadence": {
+      "enabled": false,
+      "interval_minutes": 60,
+      "nvd_catchup_windows": 3,
+      "sources": [
+        "kev",
+        "nvd",
+        "epss"
+      ]
+    }
+  },
+  "dependency_analysis": {
+    "max_sbom_bytes": 2097152,
+    "max_components": 2000,
+    "max_local_advisories": 5000,
+    "max_findings": 1000
+  },
+  "excluded_projects": [],
+  "dashboard_host": "127.0.0.1",
+  "dashboard_port": 8765,
+  "source_policy": {
+    "obsidian": {
+      "extensions": [
+        ".md"
+      ],
+      "exclude_dirs": [
+        ".obsidian",
+        ".git",
+        ".claude",
+        ".wrangler"
+      ],
+      "exclude_names": [
+        ".env",
+        ".env.local",
+        "credentials.json",
+        "secrets.json",
+        "id_rsa",
+        "id_ed25519"
+      ]
+    },
+    "projects": {
+      "extensions": [
+        ".md",
+        ".rst",
+        ".txt"
+      ],
+      "metadata_names": [
+        "README.md",
+        "README.rst",
+        "CHANGELOG.md",
+        "ARCHITECTURE.md",
+        "CONTRIBUTING.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "pyproject.toml",
+        "package.json",
+        "Cargo.toml",
+        "go.mod",
+        "requirements.txt",
+        "requirements-dev.txt",
+        "composer.json",
+        "Dockerfile"
+      ],
+      "exclude_extensions": [
+        ".db",
+        ".sqlite",
+        ".sqlite3",
+        ".mdb",
+        ".accdb",
+        ".pem",
+        ".pfx",
+        ".p12",
+        ".p7b",
+        ".p7c",
+        ".key",
+        ".keystore",
+        ".kdbx",
+        ".jks"
+      ],
+      "max_metadata_file_bytes": 2097152,
+      "max_project_dependency_manifests": 20,
+      "max_project_dependencies": 500,
+      "exclude_dirs": [
+        ".git",
+        ".hg",
+        ".svn",
+        ".venv",
+        "venv",
+        "env",
+        "node_modules",
+        "dist",
+        "build",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "coverage",
+        "__pycache__",
+        ".next",
+        "target",
+        "vendor",
+        "data",
+        "database",
+        "logs",
+        "secrets",
+        "conversation",
+        "conversations",
+        "conversation-history",
+        "conversation_history",
+        "conversation-logs",
+        "conversation_logs",
+        "conversation-exports",
+        "conversation_exports",
+        "chat-history",
+        "chat_history",
+        "chat-logs",
+        "chat_logs",
+        "chat-exports",
+        "chat_exports",
+        "chatgpt-exports",
+        "chatgpt_exports",
+        "transcripts",
+        "transcript-exports",
+        "transcript_exports",
+        "session-transcripts",
+        "session_transcripts",
+        "session-logs",
+        "session_logs",
+        "session-exports",
+        "session_exports",
+        "agent-transcripts",
+        "agent_transcripts"
+      ],
+      "exclude_names": [
+        ".env",
+        ".env.local",
+        ".env.production",
+        "credentials.json",
+        "secrets.json",
+        "id_rsa",
+        "id_ed25519",
+        "token.json",
+        "service-account.json",
+        "chatgpt-export.md",
+        "chatgpt_export.md",
+        "conversation-export.md",
+        "conversation_export.md",
+        "conversation-log.md",
+        "conversation_log.md",
+        "chat-history.md",
+        "chat_history.md",
+        "chat-export.md",
+        "chat_export.md",
+        "chat-log.md",
+        "chat_log.md",
+        "session-transcript.md",
+        "session_transcript.md",
+        "session-log.md",
+        "session_log.md",
+        "transcript.md",
+        "transcripts.md"
+      ]
+    },
+    "internal": {
+      "extensions": [
+        ".md",
+        ".rst",
+        ".txt"
+      ],
+      "exclude_dirs": [
+        ".git",
+        "__pycache__",
+        "quality-reports",
+        "history"
+      ],
+      "exclude_names": []
+    }
+  },
+  "additional_sources": []
+}
