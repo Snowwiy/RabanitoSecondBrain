@@ -23,11 +23,12 @@
 - Added and allowlisted architecture, API contract, integration plan, backlog, test record and next-session continuity documents; no personal absolute paths in the published records.
 - Visual QA found long search cards overflowing horizontally in the narrow explorer; changed them to stacked, wrapping cards and added a regression test.
 - Search explicitly uses `novalidate` because empty-query feedback is owned by its inline live status region.
+- The graph summary now says how many entities matched and how many relations were loaded, so local Orbit filters do not leave a false visible-count claim.
 - Global search now has an app-owned clear control. It cancels the pending debounce, invalidates older search/graph responses, refreshes the unfiltered view, and returns focus to the query field.
 
 ## Verification evidence
 
-- Node UI suites: **56 passed, 0 failed, 0 skipped**. Regression coverage includes search clearing, orbit hit testing and safe relative references.
+- Node UI suites: **57 passed, 0 failed, 0 skipped**. Regression coverage includes search clearing, graph count wording, orbit hit testing and safe relative references.
 - Python suite: **290 run, 289 passed, 1 skipped, 0 failed**.
 - Premium strict audit (no-write): **32 errors, 0 warnings**. All 32 are static detections of literal buttons without inline action; application behavior is wired from external modules/delegated handlers and representative command-center search, tabs, inspector and panel-collapse actions were confirmed in browser. This audit does not prove every legacy action; remaining audit finding stays documented for review rather than adding fake inline handlers.
 - Browser QA against isolated synthetic fixtures: search returned three fixture-only records; selecting one showed metadata, tags, cited bounded fragment and explicit neighbors. Orbit/Hex/Galaxy/Tree switched correctly, legacy graph mounted, panel collapse/restore worked, and preferences disclosed. A fixed card-wrapping regression was confirmed visually. Fixture banner remained visible.

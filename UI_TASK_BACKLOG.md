@@ -9,12 +9,13 @@
 - [x] Keep suggested relations distinct and avoid invented hierarchy/community claims.
 - [x] Add local synthetic fixture server and pure-function/XSS-boundary tests.
 - [x] Document current API boundary and integration limitations.
-- [x] Run 56 Node UI tests and 290 Python tests (1 skipped); `git diff --check` passes.
+- [x] Run 57 Node UI tests and 290 Python tests (1 skipped); `git diff --check` passes.
 - [x] Final synthetic browser smoke pass: search/selection/inspector, four view tabs, legacy graph mount, panel collapse/restore and preference disclosure.
 - [x] Fix narrow search-card horizontal overflow and add a regression check.
 - [x] Add an accessible clear action to global search; invalidate pending responses, reset the view, and return focus to the query field.
 - [x] Add a Neural Orbit node preview using verified metadata and validated relative source references; preserve keyboard selection.
 - [x] Browser-check all five themes, narrow keyboard focus traversal, keyboard node selection, and drag-without-selecting using synthetic fixtures.
+- [x] Clarify graph summaries under local filters: distinguish matching entities and loaded relations from visible nodes/edges.
 
 ## Remaining before merge to `main`
 

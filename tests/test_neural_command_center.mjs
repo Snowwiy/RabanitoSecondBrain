@@ -104,3 +104,8 @@ test('panel splitters initialize their accessible values from the responsive CSS
   assert.match(source, /const currentWidth = \(\) => parseInt\(getComputedStyle\(root\)\.getPropertyValue\(property\), 10\) \|\| defaultWidth/);
   assert.match(source, /separator\.setAttribute\('aria-valuenow', String\(currentWidth\(\)\)\)/);
 });
+
+test('graph summary distinguishes matching entities and loaded relations from filtered visibility', () => {
+  assert.match(source, /entidades encontradas · \$\{safeCount\(state\.graph\.edges\.length\)\} relaciones cargadas/);
+  assert.doesNotMatch(source, /state\.graph\.edges\.length\)\} relaciones visibles/);
+});

@@ -238,7 +238,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
       if (!graphGate.current(generation)) return;
       if (payload.fixture === true) { byId('ncFixtureBanner').hidden = false; doc.body.dataset.fixture = 'true'; }
       state.graph = normalizeCommandGraph(payload); state.offset = limit; state.componentFocus = null; state.groupFocus = null;
-      byId('ncGraphCount').textContent = `${safeCount(payload.total_matches ?? state.graph.nodes.length)} entidades · ${safeCount(state.graph.edges.length)} relaciones visibles${payload.truncated ? ' · vista limitada' : ''}`;
+      byId('ncGraphCount').textContent = `${safeCount(payload.total_matches ?? state.graph.nodes.length)} entidades encontradas · ${safeCount(state.graph.edges.length)} relaciones cargadas${payload.truncated ? ' · vista limitada' : ''}`;
       byId('ncLoadMore').hidden = !payload.truncated;
       if (!state.graph.nodes.some(node => node.id === state.selected)) { state.selected = null; state.selectedDocument = null; renderInspectorEmpty(); }
       renderHex(); renderTree(); drawOrbit();
