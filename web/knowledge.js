@@ -92,17 +92,88 @@ export function connectedComponents(graph) {
   return componentsFromAdjacency(explicitAdjacency(graph));
 }
 
+export function detectGraphCommunities(graph) {
+  let adjacency = new Map([...explicitAdjacency(graph)].map(([id, neighbors]) => [id, new Map([...neighbors].map(neighbor => [neighbor, 1]))]));
+  let members = new Map([...adjacency.keys()].map(id => [id, [id]]));
+  let finalCommunities = null;
+  for (let level = 0; level < 8; level += 1) {
+    const ids = [...adjacency.keys()].sort((a, b) => a.localeCompare(b, 'en'));
+    const neighbors = new Map(ids.map(id => [id, [...adjacency.get(id).keys()].filter(neighbor => neighbor !== id).sort((a, b) => a.localeCompare(b, 'en'))]));
+    const degree = new Map(ids.map(id => [id, [...adjacency.get(id).values()].reduce((sum, weight) => sum + weight, 0)]));
+    const totalDegree = [...degree.values()].reduce((sum, value) => sum + value, 0);
+    const community = new Map(ids.map(id => [id, id]));
+    if (totalDegree) {
+      const communityDegree = new Map(ids.map(id => [id, degree.get(id) || 0]));
+      for (let pass = 0; pass < 12; pass += 1) {
+        let movedAny = false;
+        for (const id of ids) {
+          const nodeDegree = degree.get(id) || 0;
+          if (!nodeDegree) continue;
+          const current = community.get(id), currentDegree = (communityDegree.get(current) || 0) - nodeDegree;
+          const selfLoop = adjacency.get(id).get(id) || 0, neighborWeight = new Map([[current, selfLoop]]);
+          for (const neighbor of neighbors.get(id)) {
+            const neighborCommunity = community.get(neighbor);
+            neighborWeight.set(neighborCommunity, (neighborWeight.get(neighborCommunity) || 0) + adjacency.get(id).get(neighbor));
+          }
+          let best = current, bestGain = (neighborWeight.get(current) || 0) - nodeDegree * currentDegree / totalDegree;
+          for (const [candidate, weight] of neighborWeight) {
+            const candidateDegree = (communityDegree.get(candidate) || 0) - (candidate === current ? nodeDegree : 0);
+            const gain = weight + (candidate === current ? 0 : selfLoop) - nodeDegree * candidateDegree / totalDegree;
+            if (gain > bestGain + 1e-9) { best = candidate; bestGain = gain; }
+          }
+          if (best !== current) {
+            communityDegree.set(current, currentDegree);
+            communityDegree.set(best, (communityDegree.get(best) || 0) + nodeDegree);
+            community.set(id, best); movedAny = true;
+          }
+        }
+        if (!movedAny) break;
+      }
+    }
+    finalCommunities = community;
+    const labels = [...new Set(community.values())];
+    if (labels.length === ids.length || level === 7) break;
+    const nextAdjacency = new Map(labels.map(label => [label, new Map()]));
+    const nextMembers = new Map(labels.map(label => [label, []]));
+    for (const id of ids) nextMembers.get(community.get(id)).push(...members.get(id));
+    for (const [id, linked] of adjacency) {
+      const from = community.get(id);
+      for (const [neighbor, weight] of linked) {
+        const to = community.get(neighbor), row = nextAdjacency.get(from);
+        row.set(to, (row.get(to) || 0) + weight);
+      }
+    }
+    adjacency = nextAdjacency; members = nextMembers;
+  }
+  const originalGroups = new Map();
+  for (const [id, originalIds] of members) {
+    const label = finalCommunities.get(id);
+    if (!originalGroups.has(label)) originalGroups.set(label, []);
+    originalGroups.get(label).push(...originalIds);
+  }
+  const orderedLabels = [...originalGroups].sort((a, b) => a[1].sort((x, y) => x.localeCompare(y, 'en'))[0].localeCompare(b[1].sort((x, y) => x.localeCompare(y, 'en'))[0], 'en'));
+  const names = new Map(orderedLabels.map(([label], index) => [label, `Comunidad ${index + 1}`]));
+  return new Map([...originalGroups].flatMap(([label, originalIds]) => originalIds.map(id => [id, names.get(label)])));
+}
 export function groupCommandNodes(nodes, groupBy = 'category', graph = null, componentMap = null) {
   const field = groupBy === 'source' ? 'source_kind' : groupBy === 'project' ? 'project_name' : 'category';
-  const components = groupBy === 'component' && graph ? (componentMap || connectedComponents(graph)) : null;
+  const groupsByNode = groupBy === 'component' && graph
+    ? (componentMap || connectedComponents(graph))
+    : groupBy === 'community' && graph ? (componentMap || detectGraphCommunities(graph)) : null;
   const groups = new Map();
   for (const node of nodes) {
-    const name = components ? (components.get(node.id) || 'Sin conectar') : stableKey(node[field]);
+    const name = groupsByNode ? (groupsByNode.get(node.id) || 'Sin conectar') : stableKey(node[field]);
     if (!groups.has(name)) groups.set(name, []);
     groups.get(name).push(node);
   }
   return [...groups].map(([name, items]) => ({name, count: items.length, nodes: items}))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'es-MX'));
+    .sort((a, b) => {
+      if (groupBy === 'community') {
+        const aIndex = Number(a.name.match(/\d+$/)?.[0] || 0), bIndex = Number(b.name.match(/\d+$/)?.[0] || 0);
+        return aIndex - bIndex || a.name.localeCompare(b.name, 'es-MX');
+      }
+      return b.count - a.count || a.name.localeCompare(b.name, 'es-MX');
+    });
 }
 
 export function explicitAdjacency(graph) {
@@ -122,7 +193,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
   const graphGate = createRequestGate(), searchGate = createRequestGate(), inspectGate = createRequestGate();
   const state = {graph: normalizeCommandGraph({}), projects: [], selected: null, selectedDocument: null, componentFocus: null, groupFocus: null, query: '', offset: 0, nodeDirectoryPage: 0, panX: 0, panY: 0, zoom: 1, dragging: false, labels: true, reducedMotion: false};
   const NODE_DIRECTORY_PAGE_SIZE = 25;
-  let derivedGraph = null, adjacencyCache = null, componentCache = null;
+  let derivedGraph = null, adjacencyCache = null, componentCache = null, communityCache = null;
   let orbitLayoutCache = {graph: null, key: '', value: null};
   const make = (tag, text, className) => {
     const element = doc.createElement(tag);
@@ -148,7 +219,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
     for (const node of nodes.slice(start, end)) {
       const item = make('li'), button = make('button', node.title, 'nc-node-directory-item');
       button.type = 'button'; button.dataset.nodeId = node.id;
-      const metadata = [node.category, node.source_kind, node.project_name].filter(Boolean).join(' · ');
+      const metadata = [node.category, node.source_kind, node.project_name, graphCommunities().get(node.id)].filter(Boolean).join(' · ');
       if (metadata) {
         button.setAttribute('aria-label', `${node.title}. ${metadata}`);
         item.append(button, make('span', metadata, 'nc-node-directory-meta'));
@@ -177,7 +248,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
 
   function ensureGraphDerivatives() {
     if (derivedGraph === state.graph) return;
-    derivedGraph = state.graph; adjacencyCache = null; componentCache = null; orbitLayoutCache = {graph: null, key: '', value: null};
+    derivedGraph = state.graph; adjacencyCache = null; componentCache = null; communityCache = null; orbitLayoutCache = {graph: null, key: '', value: null};
   }
 
   function graphAdjacency() {
@@ -190,6 +261,12 @@ export function startCommandCenter(doc, fetcher = fetch) {
     ensureGraphDerivatives();
     if (!componentCache) componentCache = componentsFromAdjacency(graphAdjacency());
     return componentCache;
+  }
+
+  function graphCommunities() {
+    ensureGraphDerivatives();
+    if (!communityCache) communityCache = detectGraphCommunities(state.graph);
+    return communityCache;
   }
 
   function prefersReducedMotion() {
@@ -337,7 +414,11 @@ export function startCommandCenter(doc, fetcher = fetch) {
       byId('ncLoadMore').hidden = !payload.truncated;
       if (!state.graph.nodes.some(node => node.id === state.selected)) { state.selected = null; state.selectedDocument = null; renderInspectorEmpty(); }
       state.nodeDirectoryPage = 0; renderAccessibleNodeList(); renderHex(); renderTree(); drawOrbit();
-      setStatus(state.graph.nodes.length ? `${state.graph.edges.filter(edge => edge.kind === 'explicit').length} enlaces explícitos. Las sugerencias se excluyen de la vista inicial.` : 'El índice no devolvió nodos para estos filtros.', state.graph.nodes.length ? '' : 'pending');
+      const communityCount = new Set(graphCommunities().values()).size;
+      const communityLabel = communityCount === 1 ? '1 comunidad detectada' : `${safeCount(communityCount)} comunidades detectadas`;
+      setStatus(state.graph.nodes.length
+        ? `${state.graph.edges.filter(edge => edge.kind === 'explicit').length} enlaces explícitos · ${communityLabel} por densidad de enlaces; es una estimación topológica.`
+        : 'El índice no devolvió nodos para estos filtros.', state.graph.nodes.length ? '' : 'pending');
       byId('ncPendingNote').hidden = false;
     } catch (error) {
       if (graphGate.current(generation)) {
@@ -352,8 +433,11 @@ export function startCommandCenter(doc, fetcher = fetch) {
     const components = state.componentFocus ? graphComponents() : null;
     let baseNodes = components ? state.graph.nodes.filter(node => components.get(node.id) === state.componentFocus) : state.graph.nodes;
     if (state.groupFocus) {
-      const field = state.groupFocus.basis === 'source' ? 'source_kind' : state.groupFocus.basis === 'project' ? 'project_name' : 'category';
-      baseNodes = baseNodes.filter(node => stableKey(node[field]) === state.groupFocus.name);
+      if (state.groupFocus.basis === 'community') baseNodes = baseNodes.filter(node => graphCommunities().get(node.id) === state.groupFocus.name);
+      else {
+        const field = state.groupFocus.basis === 'source' ? 'source_kind' : state.groupFocus.basis === 'project' ? 'project_name' : 'category';
+        baseNodes = baseNodes.filter(node => stableKey(node[field]) === state.groupFocus.name);
+      }
     }
     const minimumDegree = Number(byId('ncMinDegree').value);
     baseNodes = baseNodes.filter(node => node.id === state.selected || node.degree >= minimumDegree);
@@ -394,6 +478,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
       node.category ? `Categoría · ${node.category}` : '',
       node.source_kind ? `Fuente · ${node.source_kind}` : '',
       node.project_name ? `Proyecto · ${node.project_name}` : '',
+      `Comunidad detectada · ${graphCommunities().get(node.id) || 'Sin conectar'}`,
     ].filter(Boolean);
     const content = [make('strong', node.title)];
     if (metadata.length) content.push(make('span', metadata.join(' · '), 'nc-node-tooltip-meta'));
@@ -435,7 +520,8 @@ export function startCommandCenter(doc, fetcher = fetch) {
     }
     const {visibleNodes, visibleIds, local} = orbitLayoutCache.value;
     const adjacency = graphAdjacency(), selectedNeighbors = state.selected ? (adjacency.get(state.selected) || new Set()) : new Set();
-    const components = byId('ncColor').value === 'component' ? graphComponents() : null;
+    const colorMode = byId('ncColor').value;
+    const colorGroups = colorMode === 'component' ? graphComponents() : colorMode === 'community' ? graphCommunities() : null;
     for (const edge of state.graph.edges) {
       if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) continue;
       const a = local.get(edge.source), b = local.get(edge.target); if (!a || !b) continue;
@@ -452,8 +538,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
       const point = local.get(node.id); if (!point) continue;
       const x = centerX + point.x * scale, y = centerY + point.y * scale;
       const selected = node.id === state.selected, hovered = node.id === orbitHover?.id, active = selected || hovered, linked = selectedNeighbors.has(node.id);
-      const colorMode = byId('ncColor').value;
-      const colorKey = colorMode === 'source' ? node.source_kind : colorMode === 'project' ? node.project_name : colorMode === 'component' ? components.get(node.id) : node.category;
+      const colorKey = colorMode === 'source' ? node.source_kind : colorMode === 'project' ? node.project_name : colorGroups ? colorGroups.get(node.id) : node.category;
       const radius = Math.min(18, baseSize + Math.min(7, Math.sqrt(node.degree || 0)) + (selected ? 3 : hovered ? 2 : 0));
       orbitPoints.set(node.id, {x, y, hitRadius: Math.max(22, radius * scale + 8)});
       context.beginPath(); context.arc(point.x, point.y, radius + (selected ? 5 : hovered ? 3 : 0), 0, Math.PI * 2);
@@ -472,7 +557,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
 
   function renderHex() {
     const target = byId('ncPanelHex'), basis = byId('ncColor').value;
-    const groups = groupCommandNodes(state.graph.nodes, basis, state.graph, basis === 'component' ? graphComponents() : null);
+    const groups = groupCommandNodes(state.graph.nodes, basis, state.graph, basis === 'component' ? graphComponents() : basis === 'community' ? graphCommunities() : null);
     target.replaceChildren();
     if (!groups.length) { target.append(make('p', 'No hay entidades para agrupar con los filtros actuales.', 'meta')); return; }
     const fragment = doc.createDocumentFragment();
@@ -484,7 +569,8 @@ export function startCommandCenter(doc, fetcher = fetch) {
         : state.groupFocus?.basis === basis && state.groupFocus.name === group.name;
       button.setAttribute('aria-pressed', String(Boolean(selected)));
       card.dataset.selected = String(Boolean(selected));
-      button.setAttribute('aria-label', `${group.name}: ${group.count} entidades, agrupadas por ${basis}`);
+      const groupLabel = basis === 'community' ? 'comunidad detectada' : basis === 'component' ? 'componente conectado' : basis === 'source' ? 'fuente' : basis === 'project' ? 'proyecto' : 'categoría';
+      button.setAttribute('aria-label', `${group.name}: ${group.count} entidades, agrupadas por ${groupLabel}`);
       button.addEventListener('click', () => {
         if (basis === 'component') {
           state.componentFocus = state.componentFocus === group.name ? null : group.name;
@@ -494,7 +580,9 @@ export function startCommandCenter(doc, fetcher = fetch) {
         }
         state.componentFocus = null;
         state.groupFocus = state.groupFocus?.basis === basis && state.groupFocus.name === group.name ? null : {basis, name: group.name};
-        setStatus(`${state.groupFocus ? `${basis}: ${group.name}` : 'Vista completa'} · entidades agrupadas desde metadatos del índice.`);
+        setStatus(basis === 'community'
+          ? `${state.groupFocus ? `${group.name} seleccionada` : 'Vista completa'} · estimación topológica calculada solo desde enlaces explícitos; no es una comunidad semántica confirmada.`
+          : `${state.groupFocus ? `${basis}: ${group.name}` : 'Vista completa'} · entidades agrupadas desde metadatos del índice.`);
         drawOrbit(); setView('orbit');
       });
       card.append(button, make('span', `${group.count} ${group.count === 1 ? 'entidad' : 'entidades'}`, 'nc-hex-count'));

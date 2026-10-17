@@ -70,7 +70,7 @@ Los paneles de datos muestran carga, cero coincidencias y error sin ocultar esta
 
 ## Visual truth and graph semantics
 
-El grafo dibuja solo nodos y relaciones recibidos de `/api/graph`. Los enlaces sugeridos son opcionales, discontinuos y naranjas; nunca se mezclan con enlaces explícitos confirmados. Los componentes conectados se calculan solo desde relaciones explícitas presentes y se etiquetan como conectividad, no como comunidades semánticas. HEX agrupa por metadatos reales o componentes de conectividad. Tree agrupa documentos por `project_name`; informa explícitamente que no inventa subcomponentes ni jerarquía arquitectónica. La vista de documento usa metadatos y fragmentos citados; esta API no entrega Markdown completo.
+El grafo dibuja solo nodos y relaciones recibidos de `/api/graph`. Los enlaces sugeridos son opcionales, discontinuos y naranjas; nunca se mezclan con enlaces explícitos confirmados. Los componentes conectados se calculan solo desde relaciones explícitas presentes y se etiquetan como conectividad. Orbit/HEX también pueden mostrar una estimación topológica multi-nivel de comunidades basada únicamente en los enlaces explícitos cargados; usa el mismo mapa de color determinista por grupo y nunca se presenta como semántica tipada o confirmada. Las etiquetas advierten que la estimación puede cubrir solo el subconjunto actualmente cargado. HEX también agrupa por metadatos reales. Tree agrupa documentos por `project_name`; informa explícitamente que no inventa subcomponentes ni jerarquía arquitectónica. La vista de documento usa metadatos y fragmentos citados; esta API no entrega Markdown completo.
 
 ## Do's and Don'ts
 

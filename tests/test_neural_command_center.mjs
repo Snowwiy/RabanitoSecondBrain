@@ -10,7 +10,7 @@ const createRequestGate = () => { let n=0; return {begin:()=>++n,current:id=>id=
 const requestJson = async () => ({});
 const safeReference = value => value;
 `;
-const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, openAuthorizedSource, groupCommandNodes, explicitAdjacency};').toString('base64')}`);
+const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, openAuthorizedSource, groupCommandNodes, explicitAdjacency, detectGraphCommunities};').toString('base64')}`);
 const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 
 test('normalization keeps only real graph endpoints and preserves suggested relation state', () => {
@@ -24,6 +24,29 @@ test('normalization keeps only real graph endpoints and preserves suggested rela
   assert.equal(graph.edges[0].relation_type, 'wikilink');
   assert.equal(graph.nodes[2].title, '<script>dato</script>');
   assert.equal(graph.totalMatches, 3);
+});
+
+test('explicit-link communities separate dense clusters, ignore suggestions and stay deterministic', () => {
+  const nodes = ['a', 'b', 'c', 'd', 'e', 'f', 'z'].map(id => ({id, title: id}));
+  const edges = [
+    ['a', 'b'], ['a', 'c'], ['b', 'c'], ['d', 'e'], ['d', 'f'], ['e', 'f'], ['c', 'd'],
+  ].map(([source, target]) => ({source, target, kind: 'explicit'}));
+  edges.push({source: 'a', target: 'z', kind: 'suggested'});
+  const graph = {nodes, edges};
+  const communities = ui.detectGraphCommunities(graph);
+  assert.equal(communities.get('a'), communities.get('c'));
+  assert.equal(communities.get('d'), communities.get('f'));
+  assert.notEqual(communities.get('a'), communities.get('d'));
+  assert.notEqual(communities.get('a'), communities.get('z'));
+  assert.deepEqual(ui.groupCommandNodes(nodes, 'community', graph, communities).map(group => group.count), [3, 3, 1]);
+  const numericOrderNodes = ['1', '10', '2'].map(id => ({id}));
+  const numericOrderGraph = {nodes: numericOrderNodes, edges: []};
+  const numericOrderGroups = new Map([['1', 'Comunidad 1'], ['10', 'Comunidad 10'], ['2', 'Comunidad 2']]);
+  assert.deepEqual(ui.groupCommandNodes(numericOrderNodes, 'community', numericOrderGraph, numericOrderGroups).map(group => group.name), ['Comunidad 1', 'Comunidad 2', 'Comunidad 10']);
+  assert.deepEqual([...ui.detectGraphCommunities({nodes: [...nodes].reverse(), edges: [...edges].reverse()})], [...communities]);
+  const chainNodes = Array.from({length: 60}, (_, index) => ({id: String(index).padStart(3, '0')}));
+  const chainEdges = chainNodes.slice(1).map((node, index) => ({source: chainNodes[index].id, target: node.id, kind: 'explicit'}));
+  assert.ok(new Set(ui.detectGraphCommunities({nodes: chainNodes, edges: chainEdges}).values()).size < chainNodes.length / 2, 'multi-level aggregation must merge more than adjacent pairs on a sparse chain');
 });
 
 test('orbit coordinates are deterministic, bounded and include every node once', () => {
@@ -120,6 +143,18 @@ test('global search exposes an app-owned reset action and clears its results imm
   assert.match(source, /input\.focus\(\)/);
 });
 
+test('Neural Orbit exposes explicitly labeled topological communities for color, Hex grouping and accessible metadata', () => {
+  assert.match(html, /option value="community">Comunidad detectada/);
+  assert.match(html, /id="ncCommunityHelp"[^>]*>Las comunidades detectadas se estiman[\s\S]*?no son hechos semánticos/);
+  assert.match(html, /Este endpoint aún no ofrece comunidades tipadas del backend[\s\S]*?enlaces explícitos/);
+  assert.match(source, /function graphCommunities\(\)[\s\S]*?communityCache = detectGraphCommunities\(state\.graph\)/);
+  assert.match(source, /colorMode === 'community' \? graphCommunities\(\)/);
+  assert.match(source, /basis === 'community' \? graphCommunities\(\)/);
+  assert.match(source, /communityCount === 1 \? '1 comunidad detectada'/);
+  assert.match(source, /groupFocus\.basis === 'community'[\s\S]*?graphCommunities\(\)\.get\(node\.id\)/);
+  assert.match(source, /Comunidad detectada · \$\{graphCommunities\(\)\.get\(node\.id\)/);
+});
+
 test('Neural Orbit exposes a keyboard-described metadata tooltip and pointer hit testing', () => {
   assert.match(html, /id="ncOrbitCanvas"[^>]*aria-describedby="ncOrbitTooltip"/);
   assert.match(html, /id="ncOrbitTooltip" role="tooltip" hidden/);
@@ -146,6 +181,7 @@ test('Orbit reuses derived graph data and deterministic layout until graph or vi
   assert.match(source, /function ensureGraphDerivatives\(\) \{[\s\S]*?derivedGraph === state\.graph[\s\S]*?adjacencyCache = null; componentCache = null/);
   assert.match(source, /if \(!adjacencyCache\) adjacencyCache = explicitAdjacency\(state\.graph\)/);
   assert.match(source, /if \(!componentCache\) componentCache = componentsFromAdjacency\(graphAdjacency\(\)\)/);
+  assert.match(source, /derivedGraph = state\.graph; adjacencyCache = null; componentCache = null; communityCache = null/);
   assert.match(source, /if \(orbitLayoutCache\.graph !== state\.graph \|\| orbitLayoutCache\.key !== layoutKey\)/);
   assert.match(source, /const layoutKey = orbitLayoutKey\(\{/);
   assert.match(source, /const \{visibleNodes, visibleIds, local\} = orbitLayoutCache\.value/);

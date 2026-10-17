@@ -278,7 +278,7 @@
           <button type="button" data-module="sources"><span>⟳ Fuentes e indexaciones</span><span class="nc-module-state">Disponible</span></button>
         </nav>
         <hr class="nc-divider"><div class="nc-panel-title"><h3>Proyectos</h3><span class="nc-stage-count" id="ncProjectCount">—</span></div><div class="nc-categories nc-list-scroll" id="ncProjectList" aria-label="Proyectos descubiertos"></div>
-        <div class="nc-pending" id="ncPendingNote">La vista tipada de comunidades de backend aún no está disponible en esta rama. Las agrupaciones hexagonales se derivan solo de metadatos verificados del índice.</div>
+        <div class="nc-pending" id="ncPendingNote">Este endpoint aún no ofrece comunidades tipadas del backend. Hex puede agrupar por metadatos verificados o por comunidades topológicas estimadas desde enlaces explícitos.</div>
       </aside>
       <div class="nc-resizer" role="separator" tabindex="0" aria-label="Cambiar ancho del explorador" aria-orientation="vertical" aria-valuemin="190" aria-valuemax="420" aria-valuenow="258" data-panel="left"></div>
       <section class="nc-stage" aria-label="Visualización de conocimiento">
@@ -290,7 +290,7 @@
           <button type="button" role="tab" id="ncTabTree" aria-selected="false" aria-controls="ncPanelTree" data-view="tree">KNOWLEDGE TREE</button>
         </div>
         <div class="nc-controls" aria-label="Filtros de visualización">
-          <label class="nc-field"><span class="nc-label">Color por</span><select id="ncColor"><option value="category">Categoría</option><option value="source">Fuente</option><option value="project">Proyecto</option><option value="component">Componente conectado</option></select></label>
+          <label class="nc-field"><span class="nc-label">Color por</span><select id="ncColor" aria-describedby="ncCommunityHelp"><option value="category">Categoría</option><option value="source">Fuente</option><option value="project">Proyecto</option><option value="component">Componente conectado</option><option value="community">Comunidad detectada</option></select></label>
           <label class="nc-field"><span class="nc-label">Relaciones</span><select id="ncDepth"><option value="0">Vista global</option><option value="1">1 salto</option><option value="2">2 saltos</option></select></label>
           <label class="nc-field"><span class="nc-label">Grado mínimo</span><input id="ncMinDegree" type="range" min="0" max="8" step="1" value="0"></label>
           <label class="nc-field"><span class="nc-label">Densidad</span><input id="ncDensity" type="range" min="40" max="500" step="20" value="180"></label>
@@ -298,6 +298,7 @@
           <label class="nc-field"><span class="nc-label"><input id="ncSuggestions" type="checkbox"> Mostrar sugerencias</span></label>
           <button type="button" id="ncCenter">Centrar vista</button><button type="button" id="ncLowMotion" aria-pressed="false">Reducir movimiento</button>
         </div>
+        <p id="ncCommunityHelp" class="meta">Las comunidades detectadas se estiman a partir de la densidad de enlaces explícitos; no son hechos semánticos ni incluyen sugerencias.</p>
         <div class="nc-status" id="ncStatus" role="status" aria-live="polite">Conectando con la API local…</div>
         <div class="nc-visual" id="ncPanelOrbit" role="tabpanel" aria-labelledby="ncTabOrbit"><canvas id="ncOrbitCanvas" tabindex="0" role="application" aria-describedby="ncOrbitTooltip" aria-label="Grafo de conocimiento. Pasa el cursor para previsualizar un nodo o usa las flechas para recorrerlos; Enter abre la ficha y Escape limpia la selección."></canvas><div class="nc-node-tooltip" id="ncOrbitTooltip" role="tooltip" hidden></div><div class="nc-visual-hint">Arrastra para desplazar · rueda para acercar · flechas para recorrer · Enter para inspeccionar</div></div>
         <details class="nc-node-directory"><summary>Navegar nodos en lista accesible</summary><p id="ncNodeDirectoryStatus" class="nc-node-directory-status meta" role="status" aria-live="polite">Cargando nodos del índice local…</p><ul id="ncAccessibleNodes" class="nc-node-directory-list" aria-label="Nodos filtrados del grafo"></ul><nav class="nc-node-directory-nav" aria-label="Páginas de nodos"><button type="button" id="ncNodePagePrev" aria-controls="ncAccessibleNodes" disabled>Nodos anteriores</button><button type="button" id="ncNodePageNext" aria-controls="ncAccessibleNodes" disabled>Nodos siguientes</button></nav></details>
