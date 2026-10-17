@@ -73,7 +73,8 @@ const server = http.createServer(async (request, response) => {
       const requestedLimit = Math.min(1000, Math.max(1, Number(payload.limit) || 180));
       const nodes = graph.nodes.slice(0, requestedLimit), nodeIds = new Set(nodes.map(node => String(node.document_id)));
       const filtered = {...graph, nodes, edges: graph.edges.filter(edge => nodeIds.has(String(edge.source)) && nodeIds.has(String(edge.target))), node_limit: requestedLimit, total_matches: graph.nodes.length, truncated: nodes.length < graph.nodes.length, fixture};
-      if (!payload.suggestions) filtered.edges = filtered.edges.filter(edge => edge.kind !== 'suggested');
+      const includeSuggestions = payload.suggestions === true || ['1', 'true', 'yes'].includes(String(payload.suggestions ?? '').toLowerCase());
+      if (!includeSuggestions) filtered.edges = filtered.edges.filter(edge => edge.kind !== 'suggested');
       return json(response, filtered);
     }
     if (url.pathname === '/api/search') {

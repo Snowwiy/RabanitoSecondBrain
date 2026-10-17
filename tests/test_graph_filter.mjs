@@ -22,6 +22,11 @@ const end = html.indexOf("\n    function drawGraph(){", start);
 assert.notEqual(start, -1, "visibleGraph() must exist in the dashboard");
 assert.notEqual(end, -1, "drawGraph() must follow visibleGraph()");
 const visibleGraphSource = html.slice(start, end);
+const graphIndexStart = html.indexOf("    let graphIndexCache={graph:null,ids:null,nodeById:null,adjacency:null};");
+const graphIndexEnd = html.indexOf("\n    function visibleGraph(){", graphIndexStart);
+assert.notEqual(graphIndexStart, -1, "the legacy graph index cache must exist");
+assert.notEqual(graphIndexEnd, -1, "the graph index cache must precede visibleGraph()");
+const graphIndexSource = html.slice(graphIndexStart, graphIndexEnd);
 const communityStart = html.indexOf("    function computeCommunities(){");
 const communityEnd = html.indexOf("\n    function seedLayout(){", communityStart);
 assert.notEqual(communityStart, -1, "computeCommunities() must exist in the dashboard");
@@ -37,6 +42,11 @@ const graphInfoEnd = html.indexOf("\n    function selectNode(", graphInfoStart);
 assert.notEqual(graphInfoStart, -1, "renderGraphInfo() must exist in the dashboard");
 assert.notEqual(graphInfoEnd, -1, "selectNode() must follow renderGraphInfo()");
 const graphInfoSource = html.slice(graphInfoStart, graphInfoEnd);
+const openDocStart = html.indexOf("    async function openDoc(id){");
+const openDocEnd = html.indexOf("\n    async function showDoc(", openDocStart);
+assert.notEqual(openDocStart, -1, "openDoc() must exist in the dashboard");
+assert.notEqual(openDocEnd, -1, "showDoc() must follow openDoc()");
+const openDocSource = html.slice(openDocStart, openDocEnd);
 const escStart = html.indexOf("    const esc =");
 const escEnd = html.indexOf("\n", escStart);
 assert.notEqual(escStart, -1, "dashboard HTML escaping helper must exist");
@@ -115,7 +125,7 @@ function evaluateGraphSearch(query) {
     ],
     edges: [{ source: 1, target: 2, kind: "explicit" }],
   };
-  const run = new Function("$", "graph", "selected", `${visibleGraphSource}; return visibleGraph();`);
+  const run = new Function("$", "graph", "selected", `${graphIndexSource}; ${visibleGraphSource}; return visibleGraph();`);
   return run((id) => controls[id], graph, null);
 }
 
@@ -126,7 +136,7 @@ function evaluateVisibleGraph(graph, selectedId, { depth = "0", view = "global",
     isolateCommunity: { checked: isolate },
     graphSearch: { value: query },
   };
-  const run = new Function("$", "graph", "selected", `${visibleGraphSource}; return visibleGraph();`);
+  const run = new Function("$", "graph", "selected", `${graphIndexSource}; ${visibleGraphSource}; return visibleGraph();`);
   return run((id) => controls[id], graph, selectedId);
 }
 
@@ -137,9 +147,28 @@ function evaluateGraphKeyboardTarget(graph, selectedId, direction, { depth = "0"
     isolateCommunity: { checked: false },
     graphSearch: { value: query },
   };
-  const run = new Function("$", "graph", "selected", "direction", `${visibleGraphSource}; return graphKeyboardTarget(direction);`);
+  const run = new Function("$", "graph", "selected", "direction", `${graphIndexSource}; ${visibleGraphSource}; return graphKeyboardTarget(direction);`);
   return run((id) => controls[id], graph, selectedId, direction);
 }
+
+test("legacy Galaxy redraws reuse its graph index and replace it when a new graph arrives", () => {
+  const graph = {
+    nodes: [{document_id: 1}, {document_id: 2}, {document_id: 3}],
+    edges: [{source: 1, target: 2, kind: "explicit"}, {source: 2, target: 3, kind: "suggested"}],
+  };
+  const app = new Function("initialGraph", `${graphIndexSource}; let graph=initialGraph; return {index:()=>getGraphIndex(),replace:value=>{graph=value;}};`)(graph);
+  const first = app.index();
+  assert.equal(app.index(), first);
+  assert.equal(first.ids.size, 3);
+  assert.equal(first.nodeById.get(2).document_id, 2);
+  assert.deepEqual([...first.adjacency.get(2)].sort(), [1, 3]);
+  const nextGraph = {nodes: [{document_id: 4}], edges: []};
+  app.replace(nextGraph);
+  const next = app.index();
+  assert.notEqual(next, first);
+  assert.equal(next.graph, nextGraph);
+  assert.deepEqual([...next.ids], [4]);
+});
 
 function renderGraphInfo(graph, selectedId) {
   const side = {
@@ -152,6 +181,22 @@ function renderGraphInfo(graph, selectedId) {
   );
   return run((id) => id === "graphInfo" ? side : null, graph, selectedId, side);
 }
+
+test("authorized source opening announces success and failures inline without native dialogs", async () => {
+  const status = {textContent: ""};
+  const createOpenDoc = (fetcher) => new Function("$", "fetch", openDocSource + "; return openDoc;")(
+    (id) => id === "operationStatus" ? status : null,
+    fetcher,
+  );
+  await createOpenDoc(async () => ({ok: false, json: async () => ({error: "internal detail"})}))(7);
+  assert.equal(status.textContent, "No se pudo abrir la fuente autorizada. Reintenta desde el panel.");
+  await createOpenDoc(async () => { throw new Error("connection detail"); })(7);
+  assert.equal(status.textContent, "No se pudo conectar con el servidor local para abrir la fuente. Reintenta desde el panel.");
+  await createOpenDoc(async () => ({ok: true, json: async () => ({opened: true})}))(7);
+  assert.equal(status.textContent, "Se solicitó abrir el documento mediante la ruta autorizada.");
+  assert.doesNotMatch(openDocSource, /(?:window\.)?alert\s*\(/);
+  assert.match(html, /id="operationStatus" role="status" aria-live="polite"/);
+});
 
 test("non-matching graph search shows no nodes instead of falling back to the full graph", () => {
   const result = evaluateGraphSearch("not-present");

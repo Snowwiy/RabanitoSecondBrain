@@ -9,7 +9,7 @@
 
 ## Implemented checkpoint
 
-See `UI_DEVELOPMENT_PROGRESS.md`, `UI_ARCHITECTURE.md`, `UI_TEST_RESULTS.md`, `FRONTEND_BACKEND_CONTRACT.md`, and the capability matrix in `UI_TASK_BACKLOG.md`. Current verification is 61 passing Node tests and 290 Python tests (1 skipped).
+See `UI_DEVELOPMENT_PROGRESS.md`, `UI_ARCHITECTURE.md`, `UI_TEST_RESULTS.md`, `FRONTEND_BACKEND_CONTRACT.md`, and the capability matrix in `UI_TASK_BACKLOG.md`. Current verification is 63 passing Node tests and 290 Python tests (1 skipped).
 
 ## Immediate safe next steps
 

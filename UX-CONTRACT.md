@@ -55,6 +55,7 @@ Excepción de URLs: filtros y consultas permanecen en memoria porque la página 
 - Tree agrupa por `project_name` como metadato y muestra enlaces explícitos aparte. No presupone arquitectura ni componentes.
 - Galaxy mueve el renderer y los controles 3D existentes al panel central; no migra el renderer ni escribe en el índice.
 - Inspector usa `/api/doc/{id}` para metadatos y `/api/context` para fragmentos citados acotados. El backend de esta rama no sirve Markdown íntegro; la UI lo indica y permite abrir la fuente solo mediante `/api/open/{id}` con ID de documento.
+- La apertura autorizada anuncia estado pendiente, resultado exitoso o error recuperable en `operationStatus` (`role="status"`, `aria-live="polite"`); no usa diálogos nativos del navegador.
 - No está disponible en esta rama el endpoint tipado más nuevo de Knowledge Graph del checkout backend concurrente. La interfaz lo marca pendiente y no llama operaciones de sincronización.
 - El servidor de QA visual usa únicamente fixtures sintéticos y muestra un banner persistente; nunca se conecta a la SQLite, Obsidian o proyectos reales.
 

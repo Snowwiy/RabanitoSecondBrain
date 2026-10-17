@@ -9,7 +9,7 @@
 - [x] Keep suggested relations distinct and avoid invented hierarchy/community claims.
 - [x] Add local synthetic fixture server and pure-function/XSS-boundary tests.
 - [x] Document current API boundary and integration limitations.
-- [x] Run 61 Node UI tests and 290 Python tests (1 skipped); `git diff --check` passes.
+- [x] Run 63 Node UI tests and 290 Python tests (1 skipped); `git diff --check` passes.
 - [x] Final synthetic browser smoke pass: search/selection/inspector, four view tabs, legacy graph mount, panel collapse/restore and preference disclosure.
 - [x] Fix narrow search-card horizontal overflow and add a regression check.
 - [x] Add an accessible clear action to global search; invalidate pending responses, reset the view, and return focus to the query field.
@@ -21,6 +21,9 @@
 - [x] Cache Orbit’s graph adjacency, connected components, visible-node set and deterministic coordinates between redraws; invalidate them when graph or layout filters change.
 - [x] Add regression checks for the accessibility state and Orbit cache invalidation paths.
 - [x] Correct panel `aria-controls`; make module navigation open nested disclosures, update the current module and move focus to a visible heading.
+- [x] Cache the legacy Galaxy node/adjacency index by graph identity; verify cache reuse and invalidation when a new graph arrives.
+- [x] Correct the synthetic fixture's parsing of `"0"`/`"1"` suggestion flags so the default graph excludes suggestions like production.
+- [x] Replace the legacy authorized-source `alert()` with persistent live-region feedback for pending, success, HTTP failure and connection failure.
 
 ## Coverage audit and remaining work
 
@@ -30,13 +33,13 @@ The requested original Neural Command Center master prompt is not present in the
 |---|---|---|---|
 | Neural Orbit | Deterministic Canvas 2D document graph, explicit/suggested edge distinction, search, node selection, pan/zoom, project/source/category, degree/depth, color and progressive node loading capped at 1,000. | Pure Node coverage, synthetic-browser selection/keyboard/search/filter smoke, cache regression checks, and 1,000-node visual render smoke. | No production index or measured 1,000-node frame-time/memory profile; hover-only browser gesture and screen-reader certification remain unverified. |
 | Hex Knowledge | Groups by indexed category/source/project or explicit-edge connected components; group selection focuses Orbit. | Node grouping tests and synthetic-browser group selection; this phase verified the active group is exposed as pressed in the accessibility tree. | Component groups are document-graph connectivity, not typed entities or semantic communities. |
-| Knowledge Galaxy 3D | Existing dashboard graph controls and renderer are moved into the central tab and remain usable. | Existing graph interaction tests and synthetic-browser tab/mount smoke. | This is the legacy Canvas renderer; no new WebGL renderer was built. |
+| Knowledge Galaxy 3D | Existing Canvas 2D renderer with 3D projection/rotation and filters is moved into the central tab; graph indexes are cached per loaded graph. | Existing graph interaction tests; at 1,000 synthetic nodes, keyboard selection and community isolation rendered as expected with 999 explicit relations. | The typed cross-entity graph endpoint is absent. Renderer remains Canvas-based; WebGL was not part of the verified repository contract. |
 | Knowledge Tree | Lists documents grouped by verified project metadata and separately lists explicit graph relations (bounded to 160 rendered edges). | Grouping tests and synthetic-browser tab smoke. | It is not a source-backed architecture hierarchy; a typed graph endpoint is absent from this branch. |
-| Markdown inspector | Shows safe metadata, bounded cited retrieval fragments, explicit neighbors and an authorized source-open action. | Existing API/fixture tests and synthetic-browser inspector smoke. | Full Markdown body cannot be read until an ID-only, bounded, authorized content endpoint exists and is reviewed. |
+| Markdown inspector | Shows safe metadata, bounded cited retrieval fragments, explicit neighbors and an authorized source-open action with live pending/success/failure feedback. | Existing API/fixture tests, synthetic-browser inspector smoke, and regression coverage for source-open success/HTTP/connection states. | Full Markdown body cannot be read until an ID-only, bounded, authorized content endpoint exists and is reviewed. |
 | Personalization | Five themes; local layout, typography, density, zoom, color, labels, link appearance and reduced-motion preferences; no knowledge queries persisted. | Theme and preference browser smoke; latest phase checked both reduced-motion controls in the browser accessibility tree. | No screen-reader/forced-colors certification. |
 | Filters | Query, project, source and category API filters; Orbit depth, minimum degree, suggestions, density and coloring controls. | Existing API/UI regression suites; synthetic-browser search and minimum-degree smoke. | Not every control has a separate end-to-end browser case; real-index filter behavior awaits integration QA. |
 | Navigation | Roving tabs, keyboard/pointer node selection, arrows, Escape, search results, inspector neighbors, Tree and Hex actions, module disclosures, current-module state, keyboard and pointer splitters. | Node keyboard tests; synthetic-browser module navigation opened Projects, Coding Memory and Cyber panels and focused their headings/summaries; pointer dragging changed the Explorer's accessible width from 230 to 244. | Screen-reader certification remains open. |
-| Performance | Request cap 1,000; repeated Orbit redraws now reuse adjacency/components and cached deterministic positions for unchanged graph/filter geometry. | 61 Node tests plus synthetic-browser visual render smoke through 1,000 nodes across Orbit, Hex, legacy Galaxy and Tree. | No measured 1,000-node/real-index frame-time or memory profile; cached layout reduces repeated work but is not a performance certification. |
+| Performance | Request cap 1,000; Orbit reuses adjacency/components/positions, and Galaxy reuses a node/adjacency index until a new graph arrives. | 63 Node tests plus synthetic-browser render/interaction smoke through 1,000 nodes across Orbit, Hex, legacy Galaxy and Tree. | No measured 1,000-node/real-index frame-time or memory profile; caches reduce repeated derivation but are not performance certification. |
 
 ### Open in priority order
 

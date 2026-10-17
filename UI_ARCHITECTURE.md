@@ -22,7 +22,7 @@ The UI never accepts an arbitrary filesystem path. Imported titles, excerpts, YA
 
 - **Neural Orbit:** deterministic radial Canvas 2D projection of the current API graph; only returned edges are drawn. Explicit and suggested relations remain distinguishable. The view supports pan/zoom, selection, keyboard traversal, search, project/source/category filters, neighborhood depth, degree threshold and a bounded node count. Hover and keyboard selection show the same metadata preview; source references are validated as relative paths before display. Adjacency, components and unchanged coordinate layouts are reused between redraws.
 - **Hex Knowledge:** selectable group cards derived from source/project/category metadata. The optional connected-component mode uses explicit graph edges only. This is grouping, not a claim of semantic community detection.
-- **Knowledge Galaxy 3D:** reuses and reparents the existing dashboard graph canvas and its controls. It is the legacy implementation, not a newly introduced WebGL engine.
+- **Knowledge Galaxy 3D:** reuses and reparents the existing dashboard graph canvas and its controls. It is the legacy Canvas 2D renderer with 3D projection/rotation, not a newly introduced WebGL engine. Its node-ID, node lookup and adjacency index are cached for the currently loaded graph; each redraw still traverses visible nodes and edges.
 - **Knowledge Tree:** groups by known project metadata and lists explicit relations; it does not fabricate project architecture levels.
 - **Inspector:** reads document metadata and bounded context fragments; original paths are shown only as relative citations. Current API does not provide the complete Markdown body, so full in-app document reading remains pending.
 
