@@ -166,9 +166,9 @@ test("complete inline dashboard JavaScript parses without external dependencies"
   for (const source of inlineScripts) assert.doesNotThrow(() => new Function(source));
 });
 
-test("narrow dashboard layouts stack the header and reduce graph canvas height", () => {
+test("narrow dashboard layouts stack the command center and reduce graph canvas height", () => {
   const css = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? "";
-  assert.match(css, /@media\s*\(max-width:\s*900px\)[^{]*\{[^}]*main\s*\{\s*grid-template-columns:\s*1fr/);
+  assert.match(css, /@media\s*\(max-width:\s*840px\)[^{]*\{[\s\S]*?\.nc-command-center[^{}]*\{\s*grid-template-columns:\s*minmax\(0,1fr\)/);
   const narrow = css.match(/@media\s*\(max-width:\s*600px\)\s*\{([\s\S]*?)\n\s*\}/)?.[1] ?? "";
   assert.notEqual(narrow, "", "dashboard must define a narrow-screen breakpoint");
   assert.match(narrow, /header\s*\{[^}]*flex-direction:\s*column/);
