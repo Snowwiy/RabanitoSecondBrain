@@ -593,11 +593,13 @@ test("only the latest search response may replace the search results", async () 
   assert.notEqual(searchEnd, -1, "retrieve() must follow search()");
   const deferred = () => {
     let resolve;
-    const promise = new Promise((accept) => { resolve = accept; });
-    return { promise, resolve };
+    let reject;
+    const promise = new Promise((accept, decline) => { resolve = accept; reject = decline; });
+    return { promise, resolve, reject };
   };
   const requests = new Map();
   const results = { innerHTML: "" };
+  const status = { textContent: "" };
   let query = "viejo";
   const createGate = new Function(`${html.slice(gateStart, gateEnd)}; return createLatestRequestGate;`)();
   const search = new Function("postJson", "$", "document", "esc", "searchMatchLabel", "searchParams", "searchRequestGate", `${html.slice(searchStart, searchEnd)}; return search;`)(
@@ -606,7 +608,7 @@ test("only the latest search response may replace the search results", async () 
       requests.set(payload.q, pending);
       return pending.promise;
     },
-    (id) => id === "results" ? results : { value: query },
+    (id) => id === "results" ? results : id === "legacySearchStatus" ? status : { value: query },
     { querySelectorAll: () => [] },
     (value) => String(value ?? ""),
     () => "",
@@ -619,10 +621,25 @@ test("only the latest search response may replace the search results", async () 
   requests.get("nuevo").resolve({ results: [{ document_id: 2, title: "Resultado nuevo", category: "", source_kind: "local", relative_path: "nuevo.md", snippet: "nuevo" }] });
   await newRequest;
   assert.match(results.innerHTML, /Resultado nuevo/);
+  assert.match(status.textContent, /1 resultado local/);
   requests.get("viejo").resolve({ results: [{ document_id: 1, title: "Resultado viejo", category: "", source_kind: "local", relative_path: "viejo.md", snippet: "viejo" }] });
   await oldRequest;
   assert.match(results.innerHTML, /Resultado nuevo/);
   assert.doesNotMatch(results.innerHTML, /Resultado viejo/);
+  assert.match(status.textContent, /1 resultado local/);
+
+  query = "sin coincidencia";
+  const emptyRequest = search();
+  requests.get("sin coincidencia").resolve({ results: [] });
+  await emptyRequest;
+  assert.match(status.textContent, /Sin resultados locales/);
+
+  query = "fallo actual";
+  const failedRequest = search();
+  requests.get("fallo actual").reject(new Error("detalle privado del servidor"));
+  await failedRequest;
+  assert.match(status.textContent, /No se pudo completar la búsqueda local/);
+  assert.doesNotMatch(status.textContent, /detalle privado/);
 });
 
 test("only the latest context retrieval may replace the cited context", async () => {
@@ -640,6 +657,7 @@ test("only the latest context retrieval may replace the cited context", async ()
   };
   const requests = new Map();
   const context = { textContent: "" };
+  const status = { textContent: "" };
   let query = "viejo";
   const createGate = new Function(`${html.slice(gateStart, gateEnd)}; return createLatestRequestGate;`)();
   const retrieve = new Function("postJson", "$", "searchParams", "contextRequestGate", `${html.slice(retrieveStart, retrieveEnd)}; return retrieve;`)(
@@ -648,7 +666,7 @@ test("only the latest context retrieval may replace the cited context", async ()
       requests.set(payload.q, pending);
       return pending.promise;
     },
-    () => context,
+    (id) => id === "context" ? context : status,
     () => ({ q: query }),
     createGate(),
   );
@@ -657,11 +675,26 @@ test("only the latest context retrieval may replace the cited context", async ()
   const newRequest = retrieve();
   requests.get("nuevo").resolve({ fragments: [{ title: "Contexto nuevo", heading: "Diseño", line_start: 3, line_end: 4, text: "evidencia nueva", citation: "project:README.md#L3-L4" }] });
   await newRequest;
+  assert.match(status.textContent, /1 fragmento citado recuperado/);
   requests.get("viejo").reject(new Error("respuesta antigua"));
   await oldRequest;
   assert.match(context.textContent, /Contexto nuevo/);
   assert.match(context.textContent, /project:README\.md#L3-L4/);
   assert.doesNotMatch(context.textContent, /respuesta antigua|Contexto viejo/);
+  assert.match(status.textContent, /1 fragmento citado recuperado/);
+
+  query = "sin fragmentos";
+  const emptyRequest = retrieve();
+  requests.get("sin fragmentos").resolve({ fragments: [] });
+  await emptyRequest;
+  assert.match(status.textContent, /No se encontraron fragmentos citados/);
+
+  query = "fallo actual";
+  const failedRequest = retrieve();
+  requests.get("fallo actual").reject(new Error("detalle privado del servidor"));
+  await failedRequest;
+  assert.match(status.textContent, /No se pudo recuperar el contexto citado/);
+  assert.doesNotMatch(status.textContent, /detalle privado/);
 });
 
 test("only the latest decision query may replace the decision list", async () => {

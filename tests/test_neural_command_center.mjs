@@ -96,6 +96,14 @@ test('command-center search leaves empty-query feedback to its inline status own
   assert.match(html, /id="ncSearchStatus"[^>]*role="status"[^>]*aria-live="polite"/);
 });
 
+test('legacy search and context announce concise outcomes through atomic live regions', () => {
+  assert.match(html, /id="legacySearchStatus"[^>]*role="status"[^>]*aria-live="polite"[^>]*aria-atomic="true"/);
+  assert.match(html, /id="contextStatus"[^>]*role="status"[^>]*aria-live="polite"[^>]*aria-atomic="true"/);
+  assert.match(html, /Sin resultados locales para estos filtros/);
+  assert.match(html, /No se encontraron fragmentos citados para estos filtros/);
+  assert.match(html, /No se pudo recuperar el contexto citado/);
+});
+
 test('global search exposes an app-owned reset action and clears its results immediately', () => {
   assert.match(html, /<input[^>]*type="reset"[^>]*id="ncClearSearch"[^>]*aria-label="Limpiar búsqueda"[^>]*aria-controls="ncSearchResults"[^>]*hidden/);
   assert.match(source, /ncGlobalSearch'\)\.addEventListener\('reset'/);

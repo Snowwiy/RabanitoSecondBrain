@@ -9,7 +9,7 @@
 
 ## Implemented checkpoint
 
-See `UI_MASTER_SPEC.md`, `UI_DEVELOPMENT_PROGRESS.md`, `UI_ARCHITECTURE.md`, `UI_TEST_RESULTS.md`, `FRONTEND_BACKEND_CONTRACT.md`, and the capability matrix in `UI_TASK_BACKLOG.md`. Current UI verification is 67 passing Node tests. The last full Python run was 290 tests (1 skipped); Python is not rerun in frontend-only fixture/accessibility phases because no backend code changed. The latest phase adds synthetic stats/audit/source-preview coverage, regression protection for visual-preference persistence, and browser QA of safe read-only controls.
+See `UI_MASTER_SPEC.md`, `UI_DEVELOPMENT_PROGRESS.md`, `UI_ARCHITECTURE.md`, `UI_TEST_RESULTS.md`, `FRONTEND_BACKEND_CONTRACT.md`, and the capability matrix in `UI_TASK_BACKLOG.md`. Current UI verification is 68 passing Node tests. The last full Python run was 290 tests (1 skipped); Python is not rerun in frontend-only fixture/accessibility phases because no backend code changed. The latest phases add synthetic stats/audit/source-preview coverage, regression protection for visual-preference persistence, safe read-only control QA, and atomic legacy search/context announcements.
 
 ## Immediate safe next steps
 
