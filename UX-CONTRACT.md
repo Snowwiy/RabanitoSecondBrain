@@ -43,7 +43,7 @@ La consulta es lazy al abrir el panel. Fallos conservan resultados con advertenc
 
 Tabla de20 filas, offset/total reales del servidor, Anterior/Siguiente con límites, filtros reinician página. Orden seleccionable por evidencia/predicción o fecha. Rangos nulos nunca se presentan como cero. Carga, cero coincidencias y fallo tienen estado persistente; un fallo conserva filas anteriores identificadas como potencialmente desactualizadas.
 
-Excepción de URLs: filtros y consultas permanecen en memoria porque la página comparte el contexto documental privado. Se envían con POST JSON; no localStorage ni querystring. Solo las preferencias visuales no sensibles se persisten localmente. Búsqueda explícita/IME y debounce comparten el mismo flujo.
+Excepción de URLs: filtros y consultas permanecen en memoria porque la página comparte el contexto documental privado. Se envían con POST JSON; no localStorage ni querystring. Solo las preferencias visuales no sensibles se persisten localmente. Búsqueda explícita/IME y debounce comparten el mismo flujo. La búsqueda global ofrece un botón accesible para limpiar; al activarlo cancela el debounce pendiente, invalida respuestas anteriores, refresca la vista sin consulta y devuelve el foco al campo.
 
 ## Neural Command Center
 

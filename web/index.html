@@ -91,6 +91,11 @@
     .nc-search-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px; margin:11px 0; }
     .nc-search-form input { min-width:0; width:100%; padding:9px 10px; font-size:12px; }
     .nc-search-form button { padding:7px 10px; }
+    .nc-search-input-wrap { position:relative; min-width:0; }
+    .nc-search-input-wrap input[type="search"] { padding-right:38px; }
+    .nc-search-clear { position:absolute; top:50%; right:4px; width:28px; height:28px; min-height:28px; flex:none; padding:0!important; transform:translateY(-50%); border-color:transparent; border-radius:50%; appearance:none; background:transparent; color:var(--muted); font-size:18px; line-height:1; text-align:center; }
+    .nc-search-clear:hover { border-color:#2b444a; background:#102027; color:var(--text); }
+    .nc-search-clear[hidden] { display:none; }
     .nc-search-hint { grid-column:1/-1; }
     .nc-counts { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:10px 0 14px; }
     .nc-count { min-height:62px; padding:8px; text-align:left; background:#0d1b21; border:1px solid #263e45; border-radius:7px; }
@@ -236,7 +241,7 @@
     <section class="nc-command-center" id="ncCommandCenter" aria-label="Neural Knowledge Command Center" data-left-collapsed="false" data-right-collapsed="false">
       <aside class="nc-explorer" id="ncExplorer" aria-label="Explorador de conocimiento">
         <div class="nc-panel-title"><div><div class="nc-eyebrow">Knowledge Explorer</div><h2>Memoria local</h2></div><span class="nc-stage-count" id="ncExplorerCount">—</span></div>
-        <form class="nc-search-form" id="ncGlobalSearch" role="search" novalidate><label class="nc-label" for="ncQuery" style="grid-column:1/-1">Búsqueda global</label><input id="ncQuery" type="search" maxlength="500" placeholder="Buscar en conocimiento…" autocomplete="off"><button type="submit">Buscar</button><span class="nc-search-hint meta" id="ncSearchStatus" role="status" aria-live="polite">Consultas locales; sin transmitir contenido.</span></form>
+        <form class="nc-search-form" id="ncGlobalSearch" role="search" novalidate><label class="nc-label" for="ncQuery" style="grid-column:1/-1">Búsqueda global</label><div class="nc-search-input-wrap"><input id="ncQuery" type="search" maxlength="500" placeholder="Buscar en conocimiento…" autocomplete="off"><input type="reset" id="ncClearSearch" class="nc-search-clear" aria-label="Limpiar búsqueda" aria-controls="ncSearchResults" value="×" hidden></div><button type="submit">Buscar</button><span class="nc-search-hint meta" id="ncSearchStatus" role="status" aria-live="polite">Consultas locales; sin transmitir contenido.</span></form>
         <div class="nc-search-results nc-list-scroll" id="ncSearchResults" aria-label="Resultados de búsqueda"></div>
         <div class="nc-counts" id="ncCounts" aria-label="Estadísticas reales del índice"><div class="nc-count"><strong>—</strong><span>Documentos</span></div><div class="nc-count"><strong>—</strong><span>Relaciones</span></div><div class="nc-count"><strong>—</strong><span>Proyectos</span></div><div class="nc-count"><strong>—</strong><span>Enlaces pendientes</span></div></div>
         <div class="nc-filter-stack">

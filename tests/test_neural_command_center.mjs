@@ -67,3 +67,11 @@ test('command-center search leaves empty-query feedback to its inline status own
   assert.match(html, /<form[^>]*id="ncGlobalSearch"[^>]*novalidate/);
   assert.match(html, /id="ncSearchStatus"[^>]*role="status"[^>]*aria-live="polite"/);
 });
+
+test('global search exposes an app-owned reset action and clears its results immediately', () => {
+  assert.match(html, /<input[^>]*type="reset"[^>]*id="ncClearSearch"[^>]*aria-label="Limpiar búsqueda"[^>]*aria-controls="ncSearchResults"[^>]*hidden/);
+  assert.match(source, /ncGlobalSearch'\)\.addEventListener\('reset'/);
+  assert.match(source, /clearTimeout\(searchTimer\)/);
+  assert.match(source, /void search\(''\); void loadGraph\(\)/);
+  assert.match(source, /input\.focus\(\)/);
+});

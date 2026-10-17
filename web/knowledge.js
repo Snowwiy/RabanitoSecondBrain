@@ -639,6 +639,18 @@ export function startCommandCenter(doc, fetcher = fetch) {
     }
     let composing = false, searchTimer;
     byId('ncGlobalSearch').addEventListener('submit', event => { event.preventDefault(); void search(); void loadGraph(); });
+    byId('ncQuery').addEventListener('input', event => { byId('ncClearSearch').hidden = !event.currentTarget.value.trim(); });
+    byId('ncGlobalSearch').addEventListener('reset', event => {
+      if (event.target !== byId('ncGlobalSearch')) return;
+      clearTimeout(searchTimer);
+      queueMicrotask(() => {
+        const input = byId('ncQuery');
+        input.value = '';
+        byId('ncClearSearch').hidden = true;
+        void search(''); void loadGraph();
+        input.focus();
+      });
+    });
     byId('ncQuery').addEventListener('compositionstart', () => { composing = true; clearTimeout(searchTimer); });
     byId('ncQuery').addEventListener('compositionend', () => { composing = false; byId('ncQuery').dispatchEvent(new Event('input')); });
     byId('ncQuery').addEventListener('input', () => {

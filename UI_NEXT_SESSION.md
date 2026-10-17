@@ -9,16 +9,17 @@
 
 ## Implemented checkpoint
 
-See `UI_DEVELOPMENT_PROGRESS.md`, `UI_ARCHITECTURE.md`, `UI_TEST_RESULTS.md`, and `FRONTEND_BACKEND_CONTRACT.md`. This branch contains a three-panel command center, four graph views (one reuses the legacy graph), real API-backed graph/search/metadata/context reads, local display preferences, a fixture-only browser server, 51 passing Node tests, and 290 Python tests (1 skipped).
+See `UI_DEVELOPMENT_PROGRESS.md`, `UI_ARCHITECTURE.md`, `UI_TEST_RESULTS.md`, and `FRONTEND_BACKEND_CONTRACT.md`. This branch contains a three-panel command center, four graph views (one reuses the legacy graph), real API-backed graph/search/metadata/context reads, local display preferences, an accessible global-search clear action, a fixture-only browser server, 52 passing Node tests, and 290 Python tests (1 skipped).
 
 ## Immediate safe next steps
 
-1. Confirm all seven UI continuity/contract docs are visible to Git and inspect `git status --short --branch` plus the complete diff.
-2. Re-run Node/Python suites and `git diff --check` if any code or tests change.
-3. Review the premium audit's 32 static `actionless-button` detections; representative dynamic handlers work, but do not suppress/ignore without inspecting remaining legacy controls.
-4. Review staged-file allowlist for source/docs/tests only. Exclude `data/`, `knowledge/`, local settings, DB, credentials and any generated artifact.
-5. Fetch and compare `origin/Frontend-Design`. If it advanced beyond local ancestry, stop before commit/push and resolve through explicit user direction; do not rebase automatically.
-6. If still aligned and security review passes, create one descriptive functional-phase commit and push normally to `Frontend-Design`; verify with `git ls-remote`. Do not publish to `main` and do not merge.
+1. Publish the validated search-clear phase with a descriptive commit and normal push to `origin/Frontend-Design`; compare remote ancestry first and verify the pushed SHA with `git ls-remote`.
+2. Continue with a Neural Orbit hover preview backed only by graph payload metadata and relative citations; keep click and keyboard selection working.
+3. Before the graph phase publication, rerun both configured suites, `git diff --check`, the no-write premium audit and the synthetic browser workflow.
+4. Review the premium audit's 32 static `actionless-button` detections; the new reset control is recognized as native and the existing view/module actions remain connected from `web/knowledge.js`. Do not add fake inline handlers.
+5. Stage only source/docs/tests. Exclude `data/`, `knowledge/`, local settings, DB, credentials and any generated artifact.
+6. Fetch and compare `origin/Frontend-Design` before each push; if it advanced beyond local ancestry, do not rebase automatically.
+7. Do not publish to `main` or merge.
 
 ## Known product limitations
 
