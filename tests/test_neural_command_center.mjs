@@ -10,7 +10,7 @@ const createRequestGate = () => { let n=0; return {begin:()=>++n,current:id=>id=
 const requestJson = async () => ({});
 const safeReference = value => value;
 `;
-const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, groupCommandNodes, explicitAdjacency};').toString('base64')}`);
+const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, hitTestOrbitNode, safeRelativePath, groupCommandNodes, explicitAdjacency};').toString('base64')}`);
 const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 
 test('normalization keeps only real graph endpoints and preserves suggested relation state', () => {
@@ -33,6 +33,21 @@ test('orbit coordinates are deterministic, bounded and include every node once',
   assert.equal(first.size, 3);
   for (const point of first.values()) { assert.ok(point.x >= 0 && point.x <= 900); assert.ok(point.y >= 0 && point.y <= 600); }
   assert.equal(ui.orbitCoordinates(nodes, 0, 600).size, 0);
+});
+
+test('orbit hit testing chooses the nearest target and rejects invalid or distant coordinates', () => {
+  const points = new Map([['far', {x: 0, y: 0, hitRadius: 22}], ['near', {x: 16, y: 5, hitRadius: 28}]]);
+  assert.equal(ui.hitTestOrbitNode(points, 15, 5), 'near');
+  assert.equal(ui.hitTestOrbitNode(points, 100, 100), null);
+  assert.equal(ui.hitTestOrbitNode(points, Number.NaN, 5), null);
+});
+
+test('orbit preview displays only bounded relative paths', () => {
+  assert.equal(ui.safeRelativePath('Research/Notas.md'), 'Research/Notas.md');
+  assert.equal(ui.safeRelativePath('C:\\Users\\hexan\\secret.md'), '');
+  assert.equal(ui.safeRelativePath('\\\\server\\private\\note.md'), '');
+  assert.equal(ui.safeRelativePath('../outside.md'), '');
+  assert.equal(ui.safeRelativePath('file:///private/note.md'), '');
 });
 
 test('hex groups use verified metadata; connected components use explicit links only', () => {
@@ -74,4 +89,18 @@ test('global search exposes an app-owned reset action and clears its results imm
   assert.match(source, /clearTimeout\(searchTimer\)/);
   assert.match(source, /void search\(''\); void loadGraph\(\)/);
   assert.match(source, /input\.focus\(\)/);
+});
+
+test('Neural Orbit exposes a keyboard-described metadata tooltip and pointer hit testing', () => {
+  assert.match(html, /id="ncOrbitCanvas"[^>]*aria-describedby="ncOrbitTooltip"/);
+  assert.match(html, /id="ncOrbitTooltip" role="tooltip" hidden/);
+  assert.match(source, /function renderOrbitTooltip\(visibleIds\)/);
+  assert.match(source, /hitTestOrbitNode\(orbitPoints, x, y\)/);
+  assert.match(source, /safeRelativePath\(node\.relative_path\)/);
+  assert.match(source, /function selectOrbitNode\(id\) \{[\s\S]*?orbitHover = null; state\.selected = node\.id/);
+});
+
+test('panel splitters initialize their accessible values from the responsive CSS widths', () => {
+  assert.match(source, /const currentWidth = \(\) => parseInt\(getComputedStyle\(root\)\.getPropertyValue\(property\), 10\) \|\| defaultWidth/);
+  assert.match(source, /separator\.setAttribute\('aria-valuenow', String\(currentWidth\(\)\)\)/);
 });

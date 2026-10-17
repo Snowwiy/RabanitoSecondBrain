@@ -13,6 +13,7 @@
 - Three-panel Neural Command Center with collapsible panels and bounded mouse/keyboard splitters.
 - Five local themes; preference persistence excludes query/filter/document data.
 - Neural Orbit canvas backed by actual `/api/graph` nodes/edges; graph selection, pan/zoom, labels, focus, degree/depth filters, category/source/project/component coloring, optional suggested links, density and progressive load cap.
+- Neural Orbit previews the hovered node's title and verified metadata in a bounded text tooltip; keyboard selection shows the same preview and announces the selected title. Only a validated relative source reference is displayed.
 - Hex Knowledge cards grouped by actual source/project/category metadata, or by explicit-edge connected components clearly labeled as connectivity.
 - Knowledge Tree grouped by project metadata with explicit relation list; no fabricated architecture levels.
 - Existing Knowledge Galaxy 3D controls/canvas are moved into the central tab and retained.
@@ -26,13 +27,14 @@
 
 ## Verification evidence
 
-- Node UI suites: **52 passed, 0 failed, 0 skipped**. The new search-clear contract is covered by a regression check.
+- Node UI suites: **56 passed, 0 failed, 0 skipped**. Regression coverage includes search clearing, orbit hit testing and safe relative references.
 - Python suite: **290 run, 289 passed, 1 skipped, 0 failed**.
 - Premium strict audit (no-write): **32 errors, 0 warnings**. All 32 are static detections of literal buttons without inline action; application behavior is wired from external modules/delegated handlers and representative command-center search, tabs, inspector and panel-collapse actions were confirmed in browser. This audit does not prove every legacy action; remaining audit finding stays documented for review rather than adding fake inline handlers.
 - Browser QA against isolated synthetic fixtures: search returned three fixture-only records; selecting one showed metadata, tags, cited bounded fragment and explicit neighbors. Orbit/Hex/Galaxy/Tree switched correctly, legacy graph mounted, panel collapse/restore worked, and preferences disclosed. A fixed card-wrapping regression was confirmed visually. Fixture banner remained visible.
 - Latest browser smoke: searching for “Indexación” returned its synthetic record; pressing “Limpiar búsqueda” cleared the result and returned focus to the empty search field.
-- QA viewport was approximately 1265×715. Exact 1920×1080 and 2560×1440 browser overrides, screen-reader certification, live-index QA and real large-graph performance remain unverified. Fixture server was stopped and its port is no longer listening.
+- Latest Neural Orbit smoke at a narrow viewport: preview showed fixture title, category, source, project, validated relative path and `Grado · 2`; Escape cleared selection, ArrowRight selected and announced a node, and dragging between nodes panned without selecting the release target. All five themes switched successfully and Raven Neon was restored; Tab advanced from panel toggles to global search. Both splitters initialized with responsive accessible widths (230/270) and adjusted/restored by keyboard.
+- Visible QA covered desktop-sized 1265×715 and a narrow screenshot around 380×787. The driver exposes no viewport override or hover-only pointer action; pointer-drag splitters, exact 1920×1080/2560×1440, screen-reader certification, live-index QA and real large-graph performance remain unverified. The loopback fixture server is stopped after browser QA.
 
 ## Next action
 
-Add a hover preview to Neural Orbit so node titles and verified metadata can be inspected without changing the selected document. Preserve click and keyboard selection; show only relative citations and payload metadata. Publish the validated search phase before starting the graph phase. Do not touch `main` or the original worktree.
+Review the remaining audit findings and complete the supported wide-viewport checks when the browser can expose those dimensions. Keep the frontend on its documented fallback until backend API changes are reviewed and integrated through their own branch. Do not touch `main` or the original worktree.

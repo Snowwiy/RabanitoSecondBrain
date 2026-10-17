@@ -48,6 +48,7 @@ Excepción de URLs: filtros y consultas permanecen en memoria porque la página 
 ## Neural Command Center
 
 - Neural Orbit consume `/api/graph` (`domain=documents`) y `/api/search`; el límite inicial es 180 nodos, ampliable por carga progresiva hasta 1000. Las búsquedas se envían por POST, nunca en query strings.
+- Orbit resalta el nodo bajo el cursor y muestra una vista de texto con título, categoría, fuente, proyecto, grado y una ruta relativa validada. Las flechas muestran la misma vista y anuncian el título seleccionado; pasar el cursor no selecciona ni inspecciona el documento.
 - Proyecto, fuente, categoría, grado mínimo y profundidad visible filtran la vista. Los edges sugeridos aparecen solo mediante checkbox, como trazos naranjas; quedan separados de los enlaces explícitos confirmados.
 - Hex agrupa por categoría, fuente, proyecto o componentes conexos derivados únicamente de edges explícitos. Seleccionar un grupo enfoca Orbit y no crea relaciones.
 - Tree agrupa por `project_name` como metadato y muestra enlaces explícitos aparte. No presupone arquitectura ni componentes.

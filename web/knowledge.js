@@ -40,6 +40,26 @@ export function orbitCoordinates(nodes, width, height, spacing = 100) {
   return result;
 }
 
+export function hitTestOrbitNode(points, x, y, minimumRadius = 22) {
+  const pointerX = Number(x), pointerY = Number(y);
+  if (!Number.isFinite(pointerX) || !Number.isFinite(pointerY) || !points?.[Symbol.iterator]) return null;
+  let winner = null, nearest = Infinity;
+  for (const [id, point] of points) {
+    const pointX = Number(point?.x), pointY = Number(point?.y);
+    if (!Number.isFinite(pointX) || !Number.isFinite(pointY)) continue;
+    const distance = Math.hypot(pointX - pointerX, pointY - pointerY);
+    const radius = Math.max(0, Number(minimumRadius) || 0, Number(point?.hitRadius) || 0);
+    if (distance <= radius && distance < nearest) { winner = id; nearest = distance; }
+  }
+  return winner;
+}
+
+export function safeRelativePath(value) {
+  const path = String(value ?? '').trim();
+  if (!path || path.length > 1000 || /^[a-z][a-z\d+.-]*:/i.test(path) || /^[\\/]/.test(path) || /^~(?:[\\/]|$)/.test(path) || /(?:^|[\\/])\.\.(?:[\\/]|$)/.test(path)) return '';
+  return path;
+}
+
 export function connectedComponents(graph) {
   const adjacency = explicitAdjacency(graph), ids = [...adjacency.keys()].sort((a, b) => a.localeCompare(b, 'en'));
   const componentById = new Map(); let componentNumber = 0;
@@ -258,7 +278,37 @@ export function startCommandCenter(doc, fetcher = fetch) {
     return ORBIT_PALETTE[(hash >>> 0) % ORBIT_PALETTE.length];
   }
 
-  let orbitPoints = new Map();
+  let orbitPoints = new Map(), orbitHover = null;
+  function positionOrbitTooltip(anchor) {
+    const tooltip = byId('ncOrbitTooltip'), canvas = byId('ncOrbitCanvas');
+    if (tooltip.hidden || !anchor) return;
+    const width = canvas.clientWidth, height = canvas.clientHeight;
+    const left = Math.max(8, Math.min(width - tooltip.offsetWidth - 8, anchor.x + 14));
+    let top = anchor.y + 14;
+    if (top + tooltip.offsetHeight > height - 8) top = anchor.y - tooltip.offsetHeight - 14;
+    top = Math.max(8, Math.min(height - tooltip.offsetHeight - 8, top));
+    tooltip.style.left = `${left}px`; tooltip.style.top = `${top}px`;
+  }
+
+  function renderOrbitTooltip(visibleIds) {
+    const tooltip = byId('ncOrbitTooltip');
+    const id = orbitHover && visibleIds.has(orbitHover.id) ? orbitHover.id : visibleIds.has(state.selected) ? state.selected : null;
+    const node = id && state.graph.nodes.find(item => item.id === id), point = id && orbitPoints.get(id);
+    if (!node || !point) { tooltip.hidden = true; tooltip.replaceChildren(); return; }
+    const metadata = [
+      node.category ? `Categoría · ${node.category}` : '',
+      node.source_kind ? `Fuente · ${node.source_kind}` : '',
+      node.project_name ? `Proyecto · ${node.project_name}` : '',
+    ].filter(Boolean);
+    const content = [make('strong', node.title)];
+    if (metadata.length) content.push(make('span', metadata.join(' · '), 'nc-node-tooltip-meta'));
+    const reference = safeRelativePath(node.relative_path);
+    if (reference) content.push(make('span', reference, 'nc-node-tooltip-path'));
+    if (Number.isFinite(Number(node.degree))) content.push(make('span', `Grado · ${safeCount(node.degree)}`, 'nc-node-tooltip-meta'));
+    tooltip.replaceChildren(...content); tooltip.hidden = false;
+    positionOrbitTooltip(orbitHover?.id === id ? orbitHover : point);
+  }
+
   function drawOrbit() {
     const canvas = byId('ncOrbitCanvas');
     if (byId('ncPanelOrbit').hidden || !canvas) return;
@@ -296,23 +346,23 @@ export function startCommandCenter(doc, fetcher = fetch) {
     for (const node of visibleNodes) {
       const point = local.get(node.id); if (!point) continue;
       const x = centerX + point.x * scale, y = centerY + point.y * scale;
-      orbitPoints.set(node.id, {x, y});
-      const selected = node.id === state.selected, linked = selectedNeighbors.has(node.id);
+      const selected = node.id === state.selected, hovered = node.id === orbitHover?.id, active = selected || hovered, linked = selectedNeighbors.has(node.id);
       const colorMode = byId('ncColor').value;
       const colorKey = colorMode === 'source' ? node.source_kind : colorMode === 'project' ? node.project_name : colorMode === 'component' ? components.get(node.id) : node.category;
-      const radius = Math.min(18, baseSize + Math.min(7, Math.sqrt(node.degree || 0)) + (selected ? 3 : 0));
-      context.beginPath(); context.arc(point.x, point.y, radius + (selected ? 5 : 0), 0, Math.PI * 2);
-      context.fillStyle = `${categoryColor(colorKey)}${selected ? '40' : '18'}`; context.fill();
+      const radius = Math.min(18, baseSize + Math.min(7, Math.sqrt(node.degree || 0)) + (selected ? 3 : hovered ? 2 : 0));
+      orbitPoints.set(node.id, {x, y, hitRadius: Math.max(22, radius * scale + 8)});
+      context.beginPath(); context.arc(point.x, point.y, radius + (selected ? 5 : hovered ? 3 : 0), 0, Math.PI * 2);
+      context.fillStyle = `${categoryColor(colorKey)}${active ? '40' : '18'}`; context.fill();
       context.beginPath(); context.arc(point.x, point.y, radius, 0, Math.PI * 2);
       context.fillStyle = categoryColor(colorKey); context.globalAlpha = selected || linked || !state.selected ? 0.95 : 0.22; context.fill(); context.globalAlpha = 1;
-      context.strokeStyle = selected ? '#e6fffa' : linked ? '#9cebd9' : '#bddad660'; context.lineWidth = selected ? 2 : 0.8; context.stroke();
-      if (state.labels && (selected || (scale > 1.42 && node.degree > 0))) {
+      context.strokeStyle = selected ? '#e6fffa' : hovered ? '#d3fff3' : linked ? '#9cebd9' : '#bddad660'; context.lineWidth = active ? 1.5 : 0.8; context.stroke();
+      if (state.labels && (active || (scale > 1.42 && node.degree > 0))) {
         context.font = selected ? '600 10px system-ui, sans-serif' : '9px system-ui, sans-serif';
-        context.textAlign = 'left'; context.fillStyle = selected ? '#f0fffb' : '#c0d3d0';
+        context.textAlign = 'left'; context.fillStyle = active ? '#f0fffb' : '#c0d3d0';
         context.fillText(node.title.slice(0, 34), point.x + radius + 4, point.y + 3);
       }
     }
-    context.restore();
+    context.restore(); renderOrbitTooltip(visibleIds);
   }
 
   function renderHex() {
@@ -556,32 +606,47 @@ export function startCommandCenter(doc, fetcher = fetch) {
 
   function selectOrbitNode(id) {
     const node = state.graph.nodes.find(item => item.id === String(id)); if (!node) return;
-    state.selected = node.id; drawOrbit(); dispatchSelection(node.id, node);
+    orbitHover = null; state.selected = node.id; drawOrbit(); setStatus(`Seleccionado: ${node.title}. Pulsa Enter para abrir la ficha.`); dispatchSelection(node.id, node);
   }
 
   function bindOrbitCanvas() {
     const canvas = byId('ncOrbitCanvas'); let pointerStart = null, moved = false;
+    const updateHover = event => {
+      const rect = canvas.getBoundingClientRect(), x = event.clientX - rect.left, y = event.clientY - rect.top;
+      const id = hitTestOrbitNode(orbitPoints, x, y), changed = id !== (orbitHover?.id || null);
+      orbitHover = id === null ? null : {id, x, y}; canvas.style.cursor = id === null ? 'grab' : 'pointer';
+      if (changed) drawOrbit(); else if (orbitHover) positionOrbitTooltip(orbitHover);
+    };
+    const clearHover = () => {
+      if (state.dragging || !orbitHover) return;
+      orbitHover = null; canvas.style.cursor = 'grab'; drawOrbit();
+    };
     canvas.addEventListener('pointerdown', event => {
-      state.dragging = true; moved = false; pointerStart = {x: event.clientX, y: event.clientY, panX: state.panX, panY: state.panY};
+      updateHover(event); state.dragging = true; moved = false; pointerStart = {x: event.clientX, y: event.clientY, panX: state.panX, panY: state.panY}; canvas.style.cursor = 'grabbing';
       canvas.setPointerCapture(event.pointerId);
     });
     canvas.addEventListener('pointermove', event => {
-      if (!state.dragging || !pointerStart) return;
+      if (!state.dragging || !pointerStart) { updateHover(event); return; }
       const dx = event.clientX - pointerStart.x, dy = event.clientY - pointerStart.y;
       if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
-      if (moved) { state.panX = pointerStart.panX + dx; state.panY = pointerStart.panY + dy; drawOrbit(); }
+      if (moved) { orbitHover = null; state.panX = pointerStart.panX + dx; state.panY = pointerStart.panY + dy; drawOrbit(); }
     });
-    const endPointer = () => { state.dragging = false; pointerStart = null; };
+    const endPointer = event => {
+      const wasMoved = moved; state.dragging = false; pointerStart = null;
+      if (event.type === 'pointerup' && !wasMoved) updateHover(event);
+      else { orbitHover = null; drawOrbit(); if (event.type !== 'pointerup') moved = false; }
+      canvas.style.cursor = orbitHover ? 'pointer' : 'grab';
+    };
     canvas.addEventListener('pointerup', endPointer); canvas.addEventListener('pointercancel', endPointer);
+    canvas.addEventListener('pointerleave', clearHover);
     canvas.addEventListener('wheel', event => {
       event.preventDefault(); state.zoom = Math.max(0.45, Math.min(3, state.zoom * (event.deltaY < 0 ? 1.09 : 0.92)));
-      byId('ncZoomPref').value = String(Math.max(60, Math.min(150, Math.round(state.zoom * 100)))); savePreferences(); drawOrbit();
+      byId('ncZoomPref').value = String(Math.max(60, Math.min(150, Math.round(state.zoom * 100)))); savePreferences(); drawOrbit(); updateHover(event);
     }, {passive: false});
     canvas.addEventListener('click', event => {
       if (moved) { moved = false; return; }
       const rect = canvas.getBoundingClientRect(), x = event.clientX - rect.left, y = event.clientY - rect.top;
-      let winner = null, nearest = 22;
-      for (const [id, point] of orbitPoints) { const distance = Math.hypot(point.x - x, point.y - y); if (distance < nearest) { nearest = distance; winner = id; } }
+      const winner = hitTestOrbitNode(orbitPoints, x, y);
       if (winner !== null) selectOrbitNode(winner);
     });
     canvas.addEventListener('keydown', event => {
@@ -598,18 +663,20 @@ export function startCommandCenter(doc, fetcher = fetch) {
   function bindPanelResizers() {
     for (const separator of root.querySelectorAll('.nc-resizer')) {
       const side = separator.dataset.panel;
+      const property = side === 'left' ? '--left-width' : '--right-width';
+      const defaultWidth = side === 'left' ? 258 : 306;
+      const bounds = side === 'left' ? [190, 420] : [220, 460];
+      const currentWidth = () => parseInt(getComputedStyle(root).getPropertyValue(property), 10) || defaultWidth;
+      separator.setAttribute('aria-valuenow', String(currentWidth()));
       const adjust = delta => {
-        const property = side === 'left' ? '--left-width' : '--right-width';
-        const bounds = side === 'left' ? [190, 420] : [220, 460];
-        const current = parseInt(getComputedStyle(root).getPropertyValue(property), 10) || (side === 'left' ? 258 : 306);
-        const value = Math.max(bounds[0], Math.min(bounds[1], current + delta));
+        const value = Math.max(bounds[0], Math.min(bounds[1], currentWidth() + delta));
         root.style.setProperty(property, `${value}px`); separator.setAttribute('aria-valuenow', String(value)); savePreferences();
       };
       let start = null;
-      separator.addEventListener('pointerdown', event => { start = {x: event.clientX, width: parseInt(getComputedStyle(root).getPropertyValue(side === 'left' ? '--left-width' : '--right-width'), 10) || 280}; separator.setPointerCapture(event.pointerId); separator.dataset.dragging = 'true'; });
+      separator.addEventListener('pointerdown', event => { start = {x: event.clientX, width: currentWidth()}; separator.setPointerCapture(event.pointerId); separator.dataset.dragging = 'true'; });
       separator.addEventListener('pointermove', event => {
-        if (!start) return; const direction = side === 'left' ? 1 : -1, value = Math.max(side === 'left' ? 190 : 220, Math.min(side === 'left' ? 420 : 460, start.width + direction * (event.clientX - start.x)));
-        root.style.setProperty(side === 'left' ? '--left-width' : '--right-width', `${value}px`); separator.setAttribute('aria-valuenow', String(value));
+        if (!start) return; const direction = side === 'left' ? 1 : -1, value = Math.max(bounds[0], Math.min(bounds[1], start.width + direction * (event.clientX - start.x)));
+        root.style.setProperty(property, `${value}px`); separator.setAttribute('aria-valuenow', String(value));
       });
       const end = () => { if (start) savePreferences(); start = null; separator.dataset.dragging = 'false'; };
       separator.addEventListener('pointerup', end); separator.addEventListener('pointercancel', end);

@@ -135,6 +135,12 @@
     #ncOrbitCanvas { width:100%; height:100%; min-height:510px; display:block; cursor:grab; touch-action:none; outline:none; }
     #ncOrbitCanvas:active { cursor:grabbing; }
     #ncOrbitCanvas:focus-visible { box-shadow:inset 0 0 0 2px var(--accent); }
+    .nc-node-tooltip { position:absolute; z-index:2; width:max-content; max-width:min(300px,calc(100% - 16px)); max-height:calc(100% - 16px); overflow:auto; padding:9px 11px; border:1px solid #3c7770; border-radius:8px; background:#071319f2; box-shadow:0 10px 28px #0008; color:var(--text); pointer-events:none; font-size:10px; }
+    .nc-node-tooltip[hidden] { display:none; }
+    .nc-node-tooltip strong,.nc-node-tooltip span { display:block; overflow-wrap:anywhere; }
+    .nc-node-tooltip strong { margin-bottom:4px; color:#e6fff8; font-size:11px; }
+    .nc-node-tooltip-meta { color:#a8beba; }
+    .nc-node-tooltip-path { margin-top:4px; color:var(--accent); font:10px/1.4 ui-monospace,Consolas,monospace; }
     .nc-visual-hint { position:absolute; left:14px; bottom:12px; color:#90a7a180; font-size:10px; pointer-events:none; }
     .nc-load-more { display:flex; justify-content:center; padding:0 12px 12px; }
     .nc-load-more button { min-width:160px; padding:7px 12px; font-size:11px; }
@@ -282,7 +288,7 @@
           <button type="button" id="ncCenter">Centrar vista</button><button type="button" id="ncLowMotion" aria-pressed="false">Reducir movimiento</button>
         </div>
         <div class="nc-status" id="ncStatus" role="status" aria-live="polite">Conectando con la API local…</div>
-        <div class="nc-visual" id="ncPanelOrbit" role="tabpanel" aria-labelledby="ncTabOrbit"><canvas id="ncOrbitCanvas" tabindex="0" role="application" aria-label="Grafo de conocimiento. Usa las flechas para recorrer nodos visibles, Enter para inspeccionar y Escape para limpiar selección."></canvas><div class="nc-visual-hint">Arrastra para desplazar · rueda para acercar · flechas para recorrer · Enter para inspeccionar</div></div>
+        <div class="nc-visual" id="ncPanelOrbit" role="tabpanel" aria-labelledby="ncTabOrbit"><canvas id="ncOrbitCanvas" tabindex="0" role="application" aria-describedby="ncOrbitTooltip" aria-label="Grafo de conocimiento. Pasa el cursor para previsualizar un nodo o usa las flechas para recorrerlos; Enter abre la ficha y Escape limpia la selección."></canvas><div class="nc-node-tooltip" id="ncOrbitTooltip" role="tooltip" hidden></div><div class="nc-visual-hint">Arrastra para desplazar · rueda para acercar · flechas para recorrer · Enter para inspeccionar</div></div>
         <div class="nc-hex-grid" id="ncPanelHex" role="tabpanel" aria-labelledby="ncTabHex" hidden></div>
         <div id="ncPanelGalaxy" role="tabpanel" aria-labelledby="ncTabGalaxy" hidden></div>
         <div class="nc-tree" id="ncPanelTree" role="tabpanel" aria-labelledby="ncTabTree" hidden></div>
