@@ -116,7 +116,8 @@ export function startCommandCenter(doc, fetcher = fetch) {
   root.dataset.initialized = 'true';
   const api = (path, body) => requestJson(path, body, fetcher);
   const graphGate = createRequestGate(), searchGate = createRequestGate(), inspectGate = createRequestGate();
-  const state = {graph: normalizeCommandGraph({}), projects: [], selected: null, selectedDocument: null, componentFocus: null, groupFocus: null, query: '', offset: 0, panX: 0, panY: 0, zoom: 1, dragging: false, labels: true, reducedMotion: false};
+  const state = {graph: normalizeCommandGraph({}), projects: [], selected: null, selectedDocument: null, componentFocus: null, groupFocus: null, query: '', offset: 0, nodeDirectoryPage: 0, panX: 0, panY: 0, zoom: 1, dragging: false, labels: true, reducedMotion: false};
+  const NODE_DIRECTORY_PAGE_SIZE = 25;
   let derivedGraph = null, adjacencyCache = null, componentCache = null;
   let orbitLayoutCache = {graph: null, key: '', value: null};
   const make = (tag, text, className) => {
@@ -127,6 +128,48 @@ export function startCommandCenter(doc, fetcher = fetch) {
   };
   const setStatus = (text, tone = '') => { const status = byId('ncStatus'); status.textContent = text; status.dataset.tone = tone; };
   const safeCount = value => Number.isFinite(Number(value)) ? Number(value).toLocaleString('es-MX') : '—';
+
+  function updateAccessibleNodeSelection() {
+    for (const button of byId('ncAccessibleNodes').querySelectorAll('[data-node-id]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.nodeId === state.selected));
+    }
+  }
+
+  function renderAccessibleNodeList() {
+    const target = byId('ncAccessibleNodes'), previous = byId('ncNodePagePrev'), next = byId('ncNodePageNext');
+    const nodes = state.graph.nodes, pageCount = Math.ceil(nodes.length / NODE_DIRECTORY_PAGE_SIZE);
+    state.nodeDirectoryPage = Math.max(0, Math.min(state.nodeDirectoryPage, Math.max(0, pageCount - 1)));
+    const start = state.nodeDirectoryPage * NODE_DIRECTORY_PAGE_SIZE, end = Math.min(nodes.length, start + NODE_DIRECTORY_PAGE_SIZE);
+    const entries = doc.createDocumentFragment();
+    for (const node of nodes.slice(start, end)) {
+      const item = make('li'), button = make('button', node.title, 'nc-node-directory-item');
+      button.type = 'button'; button.dataset.nodeId = node.id;
+      const metadata = [node.category, node.source_kind, node.project_name].filter(Boolean).join(' · ');
+      if (metadata) {
+        button.setAttribute('aria-label', `${node.title}. ${metadata}`);
+        item.append(button, make('span', metadata, 'nc-node-directory-meta'));
+      } else item.append(button);
+      button.setAttribute('aria-pressed', String(node.id === state.selected));
+      button.addEventListener('click', () => selectOrbitNode(node.id));
+      entries.append(item);
+    }
+    target.replaceChildren(entries);
+    byId('ncNodeDirectoryStatus').textContent = nodes.length
+      ? `Nodos ${safeCount(start + 1)}–${safeCount(end)} de ${safeCount(nodes.length)} cargados${state.graph.truncated ? `; ${safeCount(state.graph.totalMatches)} coincidencias totales. Usa “Cargar más nodos” para ampliar la lista.` : '.'}`
+      : 'No hay nodos para los filtros actuales.';
+    previous.disabled = state.nodeDirectoryPage === 0;
+    next.disabled = end >= nodes.length;
+  }
+
+  function bindAccessibleNodeDirectory() {
+    byId('ncNodePagePrev').addEventListener('click', () => {
+      state.nodeDirectoryPage = Math.max(0, state.nodeDirectoryPage - 1); renderAccessibleNodeList();
+    });
+    byId('ncNodePageNext').addEventListener('click', () => {
+      const pageCount = Math.ceil(state.graph.nodes.length / NODE_DIRECTORY_PAGE_SIZE);
+      state.nodeDirectoryPage = Math.min(pageCount - 1, state.nodeDirectoryPage + 1); renderAccessibleNodeList();
+    });
+  }
 
   function ensureGraphDerivatives() {
     if (derivedGraph === state.graph) return;
@@ -289,12 +332,12 @@ export function startCommandCenter(doc, fetcher = fetch) {
       byId('ncGraphCount').textContent = `${safeCount(payload.total_matches ?? state.graph.nodes.length)} entidades encontradas · ${safeCount(state.graph.edges.length)} relaciones cargadas${payload.truncated ? ' · vista limitada' : ''}`;
       byId('ncLoadMore').hidden = !payload.truncated;
       if (!state.graph.nodes.some(node => node.id === state.selected)) { state.selected = null; state.selectedDocument = null; renderInspectorEmpty(); }
-      renderHex(); renderTree(); drawOrbit();
+      state.nodeDirectoryPage = 0; renderAccessibleNodeList(); renderHex(); renderTree(); drawOrbit();
       setStatus(state.graph.nodes.length ? `${state.graph.edges.filter(edge => edge.kind === 'explicit').length} enlaces explícitos. Las sugerencias se excluyen de la vista inicial.` : 'El índice no devolvió nodos para estos filtros.', state.graph.nodes.length ? '' : 'pending');
       byId('ncPendingNote').hidden = false;
     } catch (error) {
       if (graphGate.current(generation)) {
-        state.graph = normalizeCommandGraph({}); drawOrbit(); renderHex(); renderTree();
+        state.graph = normalizeCommandGraph({}); state.nodeDirectoryPage = 0; renderAccessibleNodeList(); drawOrbit(); renderHex(); renderTree();
         setStatus(`No se pudo leer el grafo local: ${String(error.message || 'error de API').slice(0, 180)}. Reintenta desde Actualizar en la vista 3D.`, 'error');
       }
     } finally { if (graphGate.current(generation)) byId('ncLoadMore').disabled = false; }
@@ -501,6 +544,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
     const documentId = Number(id);
     if (!Number.isSafeInteger(documentId) || documentId <= 0) return;
     state.selected = String(documentId);
+    updateAccessibleNodeSelection();
     const generation = inspectGate.begin();
     byId('ncInspectorType').textContent = 'Documento';
     byId('ncInspectorBody').replaceChildren(make('p', 'Leyendo metadatos del índice local…', 'nc-inspector-intro'));
@@ -678,7 +722,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
 
   function selectOrbitNode(id) {
     const node = state.graph.nodes.find(item => item.id === String(id)); if (!node) return;
-    orbitHover = null; state.selected = node.id; drawOrbit(); setStatus(`Seleccionado: ${node.title}. Pulsa Enter para abrir la ficha.`); dispatchSelection(node.id, node);
+    orbitHover = null; state.selected = node.id; updateAccessibleNodeSelection(); drawOrbit(); setStatus(`Seleccionado: ${node.title}. Pulsa Enter para abrir la ficha.`); dispatchSelection(node.id, node);
   }
 
   function bindOrbitCanvas() {
@@ -722,7 +766,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
       if (winner !== null) selectOrbitNode(winner);
     });
     canvas.addEventListener('keydown', event => {
-      if (event.key === 'Escape') { state.selected = null; state.selectedDocument = null; inspectGate.begin(); renderInspectorEmpty(); drawOrbit(); return; }
+      if (event.key === 'Escape') { state.selected = null; state.selectedDocument = null; inspectGate.begin(); renderInspectorEmpty(); updateAccessibleNodeSelection(); drawOrbit(); return; }
       if (event.key === 'Enter' && state.selected) { void inspect(state.selected); return; }
       const direction = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : ['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 0;
       if (!direction) return;
@@ -834,7 +878,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
     byId('ncGetContext').addEventListener('click', () => void retrieveContext());
     for (const button of root.querySelectorAll('[data-module]')) button.addEventListener('click', () => openModule(button.dataset.module));
     doc.addEventListener('rabanito-command-selection', event => { const id = event.detail?.id ?? event.detail?.node?.document_id; if (id != null) void inspect(id); });
-    bindOrbitCanvas(); bindPanelResizers();
+    bindOrbitCanvas(); bindAccessibleNodeDirectory(); bindPanelResizers();
   }
 
   preserveLegacyDashboard(); loadPreferences(); bind();

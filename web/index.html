@@ -142,6 +142,16 @@
     .nc-node-tooltip-meta { color:#a8beba; }
     .nc-node-tooltip-path { margin-top:4px; color:var(--accent); font:10px/1.4 ui-monospace,Consolas,monospace; }
     .nc-visual-hint { position:absolute; left:14px; bottom:12px; color:#90a7a180; font-size:10px; pointer-events:none; }
+    .nc-node-directory { margin-top:10px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; }
+    .nc-node-directory > summary { padding:9px 2px 5px; cursor:pointer; color:var(--accent); font-weight:600; }
+    .nc-node-directory-status { margin:4px 0 7px; }
+    .nc-node-directory-list { display:grid; gap:4px; max-height:250px; overflow:auto; list-style:none; margin:0 0 8px; padding:0; }
+    .nc-node-directory-list li { min-width:0; padding:5px 7px; border:1px solid #263e45; border-radius:6px; background:#0d1b21; }
+    .nc-node-directory-item { width:100%; padding:4px 5px; text-align:left; border-color:transparent; color:var(--text); font-size:11px; overflow-wrap:anywhere; }
+    .nc-node-directory-item[aria-pressed="true"] { border-color:var(--accent); background:#102c2b; }
+    .nc-node-directory-meta { display:block; padding:0 5px 2px; color:var(--muted); font-size:10px; overflow-wrap:anywhere; }
+    .nc-node-directory-nav { display:flex; justify-content:space-between; gap:8px; padding-bottom:8px; }
+    .nc-node-directory-nav button { min-height:32px; padding:5px 8px; font-size:10px; }
     .nc-load-more { display:flex; justify-content:center; padding:0 12px 12px; }
     .nc-load-more button { min-width:160px; padding:7px 12px; font-size:11px; }
     .nc-hex-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); align-content:start; gap:8px; padding:15px; }
@@ -290,6 +300,7 @@
         </div>
         <div class="nc-status" id="ncStatus" role="status" aria-live="polite">Conectando con la API local…</div>
         <div class="nc-visual" id="ncPanelOrbit" role="tabpanel" aria-labelledby="ncTabOrbit"><canvas id="ncOrbitCanvas" tabindex="0" role="application" aria-describedby="ncOrbitTooltip" aria-label="Grafo de conocimiento. Pasa el cursor para previsualizar un nodo o usa las flechas para recorrerlos; Enter abre la ficha y Escape limpia la selección."></canvas><div class="nc-node-tooltip" id="ncOrbitTooltip" role="tooltip" hidden></div><div class="nc-visual-hint">Arrastra para desplazar · rueda para acercar · flechas para recorrer · Enter para inspeccionar</div></div>
+        <details class="nc-node-directory"><summary>Navegar nodos en lista accesible</summary><p id="ncNodeDirectoryStatus" class="nc-node-directory-status meta" role="status" aria-live="polite">Cargando nodos del índice local…</p><ul id="ncAccessibleNodes" class="nc-node-directory-list" aria-label="Nodos filtrados del grafo"></ul><nav class="nc-node-directory-nav" aria-label="Páginas de nodos"><button type="button" id="ncNodePagePrev" aria-controls="ncAccessibleNodes" disabled>Nodos anteriores</button><button type="button" id="ncNodePageNext" aria-controls="ncAccessibleNodes" disabled>Nodos siguientes</button></nav></details>
         <div class="nc-hex-grid" id="ncPanelHex" role="tabpanel" aria-labelledby="ncTabHex" hidden></div>
         <div id="ncPanelGalaxy" role="tabpanel" aria-labelledby="ncTabGalaxy" hidden></div>
         <div class="nc-tree" id="ncPanelTree" role="tabpanel" aria-labelledby="ncTabTree" hidden></div>

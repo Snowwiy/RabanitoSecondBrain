@@ -9,12 +9,15 @@
 - [x] Keep suggested relations distinct and avoid invented hierarchy/community claims.
 - [x] Add local synthetic fixture server and pure-function/XSS-boundary tests.
 - [x] Document current API boundary and integration limitations.
-- [x] Run the original 64-test Node baseline and 290 Python tests (1 skipped); the current Node suite now has 65 tests, while Python is unchanged in the fixture-only phase.
+- [x] Run the original 64-test Node baseline and 290 Python tests (1 skipped); the current Node suite now has 66 tests, while Python is unchanged in the two frontend-only phases.
 - [x] Capture the user-provided Neural Command Center mission and acceptance criteria in `UI_MASTER_SPEC.md`.
 - [x] Bring the synthetic `/api/search` and `/api/graph` fixture into parity for source, project, category-prefix, query and exact-tag filtering; calculate graph totals after filtering.
 - [x] Add an isolated API functional test proving each search/graph filter, combined filters and graph truncation; no production server or database is used.
 - [x] Browser-verify Orbit source/project/category/query filtering and the dashboard's query/category/exact-tag/project combination against the updated synthetic fixture.
 - [x] Run all 65 Node UI tests and `git diff --check`; the Python suite was not rerun because this phase changes only frontend test fixtures and UI continuity documents.
+- [x] Add a collapsed, keyboard-operable Neural Orbit node directory capped at 25 buttons per page, with source metadata, selected state, live page count and previous/next navigation.
+- [x] Verify the accessible node directory in the browser accessibility tree: selecting one of 3 nodes opens the Inspector; 1,000-node pagination showed entries 1–25 and 26–50, and keyboard Enter selected node 50 without losing focus.
+- [x] Run all 66 Node UI tests and inspect the 1,000-node list visually; screen-reader and browser-zoom certification remain open.
 - [x] Final synthetic browser smoke pass: search/selection/inspector, four view tabs, legacy graph mount, panel collapse/restore and preference disclosure.
 - [x] Fix narrow search-card horizontal overflow and add a regression check.
 - [x] Add an accessible clear action to global search; invalidate pending responses, reset the view, and return focus to the query field.
@@ -38,7 +41,7 @@ The user supplied the Neural Command Center mission and acceptance areas in this
 
 | Capability | Implemented on `Frontend-Design` | Evidence actually run | Open gap |
 |---|---|---|---|
-| Neural Orbit | Deterministic Canvas 2D document graph, explicit/suggested edge distinction, search, node selection, pan/zoom, project/source/category, degree/depth, color and progressive node loading capped at 1,000. | Pure Node coverage, synthetic-browser selection/keyboard/search/filter smoke, cache regression checks, and 1,000-node visual render smoke. | No production index or measured 1,000-node frame-time/memory profile; hover-only browser gesture and screen-reader certification remain unverified. |
+| Neural Orbit | Deterministic Canvas 2D document graph, explicit/suggested edge distinction, search, node selection, pan/zoom, project/source/category, degree/depth, color and progressive node loading capped at 1,000. A collapsed native list presents 25 node buttons per page. | Pure Node coverage; synthetic-browser selection/keyboard/search/filter smoke; browser accessibility tree showed metadata and selected state, pagination from 1–25 to 26–50, and keyboard selection with Enter at 1,000 loaded nodes; visual smoke and cache regression checks. | No production index or measured 1,000-node frame-time/memory profile; screen-reader certification remains unverified. |
 | Hex Knowledge | Groups by indexed category/source/project or explicit-edge connected components; group selection focuses Orbit. | Node grouping tests and synthetic-browser group selection; this phase verified the active group is exposed as pressed in the accessibility tree. | Component groups are document-graph connectivity, not typed entities or semantic communities. |
 | Knowledge Galaxy 3D | Existing Canvas 2D renderer with 3D projection/rotation and filters is moved into the central tab; graph indexes are cached per loaded graph. | Existing graph interaction tests; at 1,000 synthetic nodes, keyboard selection and community isolation rendered as expected with 999 explicit relations. | The typed cross-entity graph endpoint is absent. Renderer remains Canvas-based; WebGL was not part of the verified repository contract. |
 | Knowledge Tree | Lists documents grouped by verified project metadata and separately lists explicit graph relations (bounded to 160 rendered edges). | Grouping tests and synthetic-browser tab smoke. | It is not a source-backed architecture hierarchy; a typed graph endpoint is absent from this branch. |
@@ -51,7 +54,7 @@ The user supplied the Neural Command Center mission and acceptance areas in this
 ### Open in priority order
 
 1. Review the remaining premium static audit `actionless-button` findings against delegated handlers and manually exercise safe read-only legacy controls; do not add fake inline handlers or trigger indexing/sync/write actions.
-2. Add a screen-reader-friendly path for inspecting graph nodes if it can remain bounded for 1,000-node responses; then verify with available accessibility-tree tooling. Full assistive-technology certification remains open.
+2. Test the bounded Orbit node list with a screen reader and browser zoom if those tools are available; the browser accessibility tree verifies semantics and keyboard selection, not assistive-technology certification.
 3. Keep the typed cross-entity graph and full Markdown reader pending until the corresponding authorized backend endpoints are committed and reviewed; do not synthesize entities or content.
 4. Capture frame-time/memory measurements for the synthetic 1,000-node graph if the browser exposes profiling. Exact 1920×1080 / 2560×1440 geometry is checked with no horizontal overflow; the 1,000-node render smoke is not production performance certification.
 5. After backend changes are independently reviewed, feature-detect the typed graph and authorized Markdown-content APIs, retain current fallbacks, and run UI + Python regression tests without indexing, syncing or writing SQLite.

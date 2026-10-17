@@ -4,9 +4,9 @@ Last verified: 2026-10-17. All browser checks used the loopback-only synthetic f
 
 ## Automated
 
-- `node --test tests/test_cyber_ui.mjs tests/test_graph_filter.mjs tests/test_neural_command_center.mjs tests/test_neural_command_center_fixture_api.mjs` — **65 passed, 0 failed, 0 skipped**. The new isolated fixture API test exercises source, project, category-prefix, query and exact-tag filters plus graph totals/truncation.
+- `node --test tests/test_cyber_ui.mjs tests/test_graph_filter.mjs tests/test_neural_command_center.mjs tests/test_neural_command_center_fixture_api.mjs` — **66 passed, 0 failed, 0 skipped**. Coverage includes the isolated fixture API filter test and bounded Orbit node-list pagination/selection.
 - `python -B -m unittest discover -s tests -q` — **290 run, 289 passed, 1 skipped, 0 failed**.
-- `git diff --check` — passed after the final phase edits. The Python suite was last run before this fixture-only phase; it was not rerun because no backend implementation changed.
+- `git diff --check` — passed after the final phase edits. Python was last run before both frontend-only phases; it was not rerun because no backend implementation changed.
 - Premium UI audit `audit_project.py <worktree> --mode strict --output <temp>` — **32 errors, 0 warnings** (exit 1). Every finding is `affordance.actionless-button`: the static audit cannot discover buttons wired by the existing `web/knowledge.js` module/delegated handlers. Representative new actions were browser-verified; not every legacy dashboard action received a manual click-through. The latest JSON report was saved in the OS temp directory, outside the worktree, and was not staged.
 
 ## Browser QA
@@ -20,6 +20,7 @@ Using the local synthetic fixture server at `127.0.0.1:8877`, the visible browse
 - Search results wrap within the explorer after a visual overflow issue was found and corrected; explorer collapse/restore and preference disclosure worked.
 - Global search for “Indexación” returned one synthetic result. “Limpiar búsqueda” removed the result immediately and restored focus to the empty field.
 - Updated fixture filter QA: Orbit returned one node for `Proyectos`, two nodes/one explicit edge for project `Fixture Core`, one node for category `technical`, and one Obsidian node for the combined “Indexación” + `research` filters. The legacy dashboard search combined query “Recuperación”, category prefix `coding`, exact tag `#retrieval`, and project `Fixture Core`; it returned only the synthetic Coding Memory record. The screenshot provider showed the active category/project and single-node Orbit; all values remained marked as synthetic.
+- Neural Orbit accessibility QA: the collapsed directory exposed three synthetic nodes with category/source/project labels and a selected state after activation. At 1,000 loaded nodes, it rendered only 25 entries at a time; the browser accessibility tree advanced from 1–25 to 26–50. Shift+Tab and Enter selected node 50 while retaining focus and populated the Inspector. A visual capture showed the bounded list below the 1,000-node Orbit. This verifies keyboard and browser accessibility-tree behavior, not screen-reader certification.
 - Neural Orbit preview showed the fixture title, category/source/project metadata, validated relative path and `Grado · 2`. Clicking selected the node; Escape cleared selection; ArrowRight selected and announced the title. Dragging between two visible nodes panned the graph without selecting the node under release.
 - Tree reports metadata grouping rather than asserting an undocumented architecture.
 - Selecting a Hex group made it announce `Value: 1` after returning to Hex and applied the active-card treatment; “Centrar vista” cleared it back to `Value: 0`.

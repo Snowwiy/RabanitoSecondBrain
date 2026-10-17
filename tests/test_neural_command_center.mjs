@@ -113,6 +113,19 @@ test('Neural Orbit exposes a keyboard-described metadata tooltip and pointer hit
   assert.match(source, /function selectOrbitNode\(id\) \{[\s\S]*?orbitHover = null; state\.selected = node\.id/);
 });
 
+test('Neural Orbit provides a bounded screen-reader node list with selection and pagination', () => {
+  assert.match(html, /<details class="nc-node-directory"><summary>Navegar nodos en lista accesible<\/summary>/);
+  assert.match(html, /id="ncNodeDirectoryStatus"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.match(html, /<ul id="ncAccessibleNodes"[^>]*aria-label="Nodos filtrados del grafo"/);
+  assert.match(html, /id="ncNodePagePrev"[^>]*aria-controls="ncAccessibleNodes"/);
+  assert.match(html, /id="ncNodePageNext"[^>]*aria-controls="ncAccessibleNodes"/);
+  assert.match(source, /const NODE_DIRECTORY_PAGE_SIZE = 25/);
+  assert.match(source, /function renderAccessibleNodeList\(\)[\s\S]*?nodes\.slice\(start, end\)[\s\S]*?aria-pressed/);
+  assert.match(source, /button\.setAttribute\('aria-label', `\$\{node\.title\}\. \$\{metadata\}`\)/);
+  assert.match(source, /function updateAccessibleNodeSelection\(\)[\s\S]*?button\.dataset\.nodeId === state\.selected/);
+  assert.match(source, /function bindAccessibleNodeDirectory\(\)[\s\S]*?ncNodePagePrev[\s\S]*?ncNodePageNext/);
+});
+
 test('Orbit reuses derived graph data and deterministic layout until graph or view filters change', () => {
   assert.match(source, /function ensureGraphDerivatives\(\) \{[\s\S]*?derivedGraph === state\.graph[\s\S]*?adjacencyCache = null; componentCache = null/);
   assert.match(source, /if \(!adjacencyCache\) adjacencyCache = explicitAdjacency\(state\.graph\)/);
