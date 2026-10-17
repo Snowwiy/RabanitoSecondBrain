@@ -100,6 +100,38 @@ test('Neural Orbit exposes a keyboard-described metadata tooltip and pointer hit
   assert.match(source, /function selectOrbitNode\(id\) \{[\s\S]*?orbitHover = null; state\.selected = node\.id/);
 });
 
+test('Orbit reuses derived graph data and deterministic layout until graph or view filters change', () => {
+  assert.match(source, /function ensureGraphDerivatives\(\) \{[\s\S]*?derivedGraph === state\.graph[\s\S]*?adjacencyCache = null; componentCache = null/);
+  assert.match(source, /if \(!adjacencyCache\) adjacencyCache = explicitAdjacency\(state\.graph\)/);
+  assert.match(source, /if \(!componentCache\) componentCache = componentsFromAdjacency\(graphAdjacency\(\)\)/);
+  assert.match(source, /if \(orbitLayoutCache\.graph !== state\.graph \|\| orbitLayoutCache\.key !== layoutKey\)/);
+  assert.match(source, /const \{visibleNodes, visibleIds, local\} = orbitLayoutCache\.value/);
+});
+
+test('Hex group buttons expose the currently active metadata or explicit-component focus', () => {
+  assert.match(source, /const selected = basis === 'component'[\s\S]*?state\.componentFocus === group\.name && !state\.groupFocus[\s\S]*?state\.groupFocus\?\.basis === basis && state\.groupFocus\.name === group\.name/);
+  assert.match(source, /button\.setAttribute\('aria-pressed', String\(Boolean\(selected\)\)\)/);
+  assert.match(source, /card\.dataset\.selected = String\(Boolean\(selected\)\)/);
+  assert.match(html, /\.nc-hex-card:hover,\.nc-hex-card\[data-selected="true"\]/);
+  assert.match(source, /byId\('ncCenter'\)\.addEventListener\('click',[\s\S]*?state\.groupFocus = null;[\s\S]*?renderHex\(\); drawOrbit\(\)/);
+});
+
+test('reduced-motion preference respects the OS default and keeps checkbox and toggle state synchronized', () => {
+  assert.match(source, /function prefersReducedMotion\(\)[\s\S]*?matchMedia\('\(prefers-reduced-motion: reduce\)'\)/);
+  assert.match(source, /function syncReducedMotion\(enabled\)[\s\S]*?byId\('ncReducedMotion'\)\.checked = reduced[\s\S]*?byId\('ncLowMotion'\)\.setAttribute\('aria-pressed', String\(reduced\)\)/);
+  assert.match(source, /byId\('ncReducedMotion'\)\.addEventListener\('change', event => \{ syncReducedMotion\(event\.target\.checked\); savePreferences\(\); \}\)/);
+  assert.equal((source.match(/byId\('ncReducedMotion'\)\.addEventListener\('change'/g) || []).length, 1);
+});
+
+test('module navigation opens disclosures, announces the active destination and focuses a usable heading', () => {
+  assert.match(html, /id="ncToggleExplorer" aria-controls="ncExplorer"/);
+  assert.match(html, /id="ncToggleInspector" aria-controls="ncInspector"/);
+  assert.match(source, /const disclosure = target\?\.closest\('details'\);\s*if \(disclosure\) disclosure\.open = true/);
+  assert.match(source, /button\.dataset\.module === name\) button\.setAttribute\('aria-current', 'page'\)/);
+  assert.match(source, /const panel = target\.closest\('details,section'\) \|\| target;[\s\S]*?focusTarget\.setAttribute\('tabindex', '-1'\)[\s\S]*?focusTarget\.focus\?\.\(\{preventScroll: true\}\)/);
+  assert.match(html, /\.legacy-workbench \.module-focus-target:focus/);
+});
+
 test('panel splitters initialize their accessible values from the responsive CSS widths', () => {
   assert.match(source, /const currentWidth = \(\) => parseInt\(getComputedStyle\(root\)\.getPropertyValue\(property\), 10\) \|\| defaultWidth/);
   assert.match(source, /separator\.setAttribute\('aria-valuenow', String\(currentWidth\(\)\)\)/);

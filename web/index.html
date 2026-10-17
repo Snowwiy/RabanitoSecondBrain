@@ -146,7 +146,7 @@
     .nc-load-more button { min-width:160px; padding:7px 12px; font-size:11px; }
     .nc-hex-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); align-content:start; gap:8px; padding:15px; }
     .nc-hex-card { position:relative; min-height:148px; display:grid; place-items:center; padding:18px 13px; border:1px solid #3a6565; background:radial-gradient(circle at 50% 45%,#163139,#0a171d 72%); clip-path:polygon(25% 4%,75% 4%,100% 50%,75% 96%,25% 96%,0 50%); text-align:center; color:var(--text); }
-    .nc-hex-card:hover,.nc-hex-card[aria-pressed="true"] { border-color:var(--accent); background:radial-gradient(circle at 50% 45%,#205047,#0c1a20 72%); }
+    .nc-hex-card:hover,.nc-hex-card[data-selected="true"] { border-color:var(--accent); background:radial-gradient(circle at 50% 45%,#205047,#0c1a20 72%); }
     .nc-hex-card strong { display:block; max-width:150px; overflow-wrap:anywhere; font-size:11px; }
     .nc-hex-card span { display:block; color:var(--muted); font-size:10px; }
     .nc-hex-wrap { position:relative; padding:2px; background:#35585c; clip-path:polygon(25% 4%,75% 4%,100% 50%,75% 96%,25% 96%,0 50%); }
@@ -193,6 +193,7 @@
     .legacy-workbench > summary { padding:10px 14px; border:1px solid var(--line); border-radius:8px; color:var(--muted); background:#0c171c; font-size:12px; }
     .legacy-workbench[open] > summary { border-radius:8px 8px 0 0; color:var(--accent); }
     .legacy-workbench .legacy-grid { padding-top:12px; }
+    .legacy-workbench .module-focus-target:focus { outline:2px solid var(--accent); outline-offset:3px; }
     @media(max-width:1120px) {
       .nc-command-center { --left-width:230px; --right-width:270px; }
       .nc-controls .nc-field { width:145px; }
@@ -239,7 +240,7 @@
     <div class="nc-header-actions">
       <div class="nc-health" aria-live="polite"><span class="nc-health-dot" aria-hidden="true"></span><span id="health">Comprobando API local…</span></div>
       <label for="ncTheme">Tema</label><select id="ncTheme"><option value="raven-neon">Raven Neon</option><option value="cyber-ocean">Cyber Ocean</option><option value="violet-intelligence">Violet Intelligence</option><option value="security-amber">Security Amber</option><option value="minimal-dark">Minimal Dark</option></select>
-      <button type="button" id="ncToggleExplorer" aria-controls="ncCommandCenter" aria-expanded="true" aria-pressed="false">Explorador</button><button type="button" id="ncToggleInspector" aria-controls="ncCommandCenter" aria-expanded="true" aria-pressed="false">Inspector</button>
+      <button type="button" id="ncToggleExplorer" aria-controls="ncExplorer" aria-expanded="true" aria-pressed="false">Explorador</button><button type="button" id="ncToggleInspector" aria-controls="ncInspector" aria-expanded="true" aria-pressed="false">Inspector</button>
     </div>
   </header>
   <div id="ncFixtureBanner" class="nc-fixture-banner" role="status" hidden>ENTORNO DE PRUEBA · Los valores siguientes son sintéticos y no representan el índice de Rabanito.</div>

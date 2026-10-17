@@ -60,8 +60,8 @@ export function safeRelativePath(value) {
   return path;
 }
 
-export function connectedComponents(graph) {
-  const adjacency = explicitAdjacency(graph), ids = [...adjacency.keys()].sort((a, b) => a.localeCompare(b, 'en'));
+function componentsFromAdjacency(adjacency) {
+  const ids = [...adjacency.keys()].sort((a, b) => a.localeCompare(b, 'en'));
   const componentById = new Map(); let componentNumber = 0;
   for (const start of ids) {
     if (componentById.has(start)) continue;
@@ -71,9 +71,13 @@ export function connectedComponents(graph) {
   return componentById;
 }
 
-export function groupCommandNodes(nodes, groupBy = 'category', graph = null) {
+export function connectedComponents(graph) {
+  return componentsFromAdjacency(explicitAdjacency(graph));
+}
+
+export function groupCommandNodes(nodes, groupBy = 'category', graph = null, componentMap = null) {
   const field = groupBy === 'source' ? 'source_kind' : groupBy === 'project' ? 'project_name' : 'category';
-  const components = groupBy === 'component' && graph ? connectedComponents(graph) : null;
+  const components = groupBy === 'component' && graph ? (componentMap || connectedComponents(graph)) : null;
   const groups = new Map();
   for (const node of nodes) {
     const name = components ? (components.get(node.id) || 'Sin conectar') : stableKey(node[field]);
@@ -100,6 +104,8 @@ export function startCommandCenter(doc, fetcher = fetch) {
   const api = (path, body) => requestJson(path, body, fetcher);
   const graphGate = createRequestGate(), searchGate = createRequestGate(), inspectGate = createRequestGate();
   const state = {graph: normalizeCommandGraph({}), projects: [], selected: null, selectedDocument: null, componentFocus: null, groupFocus: null, query: '', offset: 0, panX: 0, panY: 0, zoom: 1, dragging: false, labels: true, reducedMotion: false};
+  let derivedGraph = null, adjacencyCache = null, componentCache = null;
+  let orbitLayoutCache = {graph: null, key: '', value: null};
   const make = (tag, text, className) => {
     const element = doc.createElement(tag);
     if (text !== undefined && text !== null) element.textContent = String(text);
@@ -108,6 +114,34 @@ export function startCommandCenter(doc, fetcher = fetch) {
   };
   const setStatus = (text, tone = '') => { const status = byId('ncStatus'); status.textContent = text; status.dataset.tone = tone; };
   const safeCount = value => Number.isFinite(Number(value)) ? Number(value).toLocaleString('es-MX') : '—';
+
+  function ensureGraphDerivatives() {
+    if (derivedGraph === state.graph) return;
+    derivedGraph = state.graph; adjacencyCache = null; componentCache = null; orbitLayoutCache = {graph: null, key: '', value: null};
+  }
+
+  function graphAdjacency() {
+    ensureGraphDerivatives();
+    if (!adjacencyCache) adjacencyCache = explicitAdjacency(state.graph);
+    return adjacencyCache;
+  }
+
+  function graphComponents() {
+    ensureGraphDerivatives();
+    if (!componentCache) componentCache = componentsFromAdjacency(graphAdjacency());
+    return componentCache;
+  }
+
+  function prefersReducedMotion() {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  function syncReducedMotion(enabled) {
+    const reduced = Boolean(enabled);
+    state.reducedMotion = reduced;
+    byId('ncReducedMotion').checked = reduced;
+    byId('ncLowMotion').setAttribute('aria-pressed', String(reduced));
+  }
 
   function preserveLegacyDashboard() {
     const main = root.parentElement;
@@ -139,6 +173,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
   }
 
   function loadPreferences() {
+    byId('ncReducedMotion').checked = prefersReducedMotion();
     try {
       const prefs = JSON.parse(localStorage.getItem('rabanito.ui.preferences') || '{}');
       if (Number.isFinite(prefs.zoom) && prefs.zoom >= 0.6 && prefs.zoom <= 1.5) byId('ncZoomPref').value = String(Math.round(prefs.zoom * 100));
@@ -153,12 +188,12 @@ export function startCommandCenter(doc, fetcher = fetch) {
       if (Number.isFinite(prefs.leftWidth) && prefs.leftWidth >= 190 && prefs.leftWidth <= 420) root.style.setProperty('--left-width', `${prefs.leftWidth}px`);
       if (Number.isFinite(prefs.rightWidth) && prefs.rightWidth >= 220 && prefs.rightWidth <= 460) root.style.setProperty('--right-width', `${prefs.rightWidth}px`);
       state.zoom = Number(byId('ncZoomPref').value) / 100; state.labels = byId('ncShowLabels').checked;
-      state.reducedMotion = byId('ncReducedMotion').checked;
+      syncReducedMotion(byId('ncReducedMotion').checked);
       root.style.setProperty('--nc-panel-alpha', `${byId('ncOpacity').value}%`);
       root.style.fontSize = `${byId('ncFontScale').value}%`;
       root.style.fontFamily = byId('ncTypography').value === 'mono' ? 'ui-monospace,Consolas,monospace' : 'system-ui,Segoe UI,sans-serif';
       const theme = localStorage.getItem('rabanito.ui.theme'); if (theme) setTheme(theme);
-    } catch { /* malformed local preferences fall back to defaults */ }
+    } catch { syncReducedMotion(byId('ncReducedMotion').checked); /* malformed local preferences fall back to defaults */ }
   }
 
   function savePreferences() {
@@ -254,7 +289,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
 
   function graphNodesAtDepth() {
     const depth = Number(byId('ncDepth').value);
-    const components = state.componentFocus ? connectedComponents(state.graph) : null;
+    const components = state.componentFocus ? graphComponents() : null;
     let baseNodes = components ? state.graph.nodes.filter(node => components.get(node.id) === state.componentFocus) : state.graph.nodes;
     if (state.groupFocus) {
       const field = state.groupFocus.basis === 'source' ? 'source_kind' : state.groupFocus.basis === 'project' ? 'project_name' : 'category';
@@ -263,7 +298,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
     const minimumDegree = Number(byId('ncMinDegree').value);
     baseNodes = baseNodes.filter(node => node.id === state.selected || node.degree >= minimumDegree);
     if (!depth || !state.selected || !baseNodes.some(node => node.id === state.selected)) return baseNodes;
-    const adjacency = explicitAdjacency(state.graph), visible = new Set([state.selected]), frontier = [state.selected];
+    const adjacency = graphAdjacency(), visible = new Set([state.selected]), frontier = [state.selected];
     for (let level = 0; level < depth; level += 1) {
       const next = [];
       for (let cursor = 0; cursor < frontier.length; cursor += 1) for (const neighbor of adjacency.get(frontier[cursor]) || []) if (!visible.has(neighbor)) { visible.add(neighbor); next.push(neighbor); }
@@ -319,18 +354,24 @@ export function startCommandCenter(doc, fetcher = fetch) {
     context.setTransform(dpr, 0, 0, dpr, 0, 0); context.clearRect(0, 0, rect.width, rect.height);
     const centerX = rect.width / 2 + state.panX, centerY = rect.height / 2 + state.panY, scale = state.zoom;
     context.save(); context.translate(centerX, centerY); context.scale(scale, scale);
-    const spacing = Number(byId('ncOrbitSpacing').value) / 100;
-    const orbitRadius = Math.max(40, Math.min(rect.width, rect.height) * 0.44 * spacing);
+    const spacingPercent = Number(byId('ncOrbitSpacing').value) / 100;
+    const orbitRadius = Math.max(40, Math.min(rect.width, rect.height) * 0.44 * spacingPercent);
     context.strokeStyle = '#59818a20'; context.lineWidth = 1;
     for (const fraction of [0.34, 0.68, 1]) { context.beginPath(); context.arc(0, 0, orbitRadius * fraction, 0, Math.PI * 2); context.stroke(); }
     context.fillStyle = '#7b9a9b'; context.font = '9px ui-monospace,Consolas,monospace'; context.textAlign = 'center';
     context.fillText('RABANITO · MEMORIA LOCAL', 0, -8);
     context.fillStyle = '#456269'; context.fillText(`${state.graph.nodes.length} NODOS INDEXADOS`, 0, 8);
-    const visibleNodes = graphNodesAtDepth(), visibleIds = new Set(visibleNodes.map(node => node.id));
-    const positions = orbitCoordinates(visibleNodes, Math.max(1, rect.width - 24), Math.max(1, rect.height - 24), byId('ncOrbitSpacing').value);
-    const local = new Map([...positions].map(([id, point]) => [id, {x: point.x - rect.width / 2 + 12, y: point.y - rect.height / 2 + 12}]));
-    const adjacency = explicitAdjacency(state.graph), selectedNeighbors = state.selected ? (adjacency.get(state.selected) || new Set()) : new Set();
-    const components = byId('ncColor').value === 'component' ? connectedComponents(state.graph) : null;
+    const spacing = byId('ncOrbitSpacing').value;
+    const layoutKey = JSON.stringify([rect.width, rect.height, spacing, byId('ncDepth').value, byId('ncMinDegree').value, state.selected, state.componentFocus, state.groupFocus?.basis, state.groupFocus?.name]);
+    if (orbitLayoutCache.graph !== state.graph || orbitLayoutCache.key !== layoutKey) {
+      const visibleNodes = graphNodesAtDepth();
+      const positions = orbitCoordinates(visibleNodes, Math.max(1, rect.width - 24), Math.max(1, rect.height - 24), spacing);
+      const local = new Map([...positions].map(([id, point]) => [id, {x: point.x - rect.width / 2 + 12, y: point.y - rect.height / 2 + 12}]));
+      orbitLayoutCache = {graph: state.graph, key: layoutKey, value: {visibleNodes, visibleIds: new Set(visibleNodes.map(node => node.id)), local}};
+    }
+    const {visibleNodes, visibleIds, local} = orbitLayoutCache.value;
+    const adjacency = graphAdjacency(), selectedNeighbors = state.selected ? (adjacency.get(state.selected) || new Set()) : new Set();
+    const components = byId('ncColor').value === 'component' ? graphComponents() : null;
     for (const edge of state.graph.edges) {
       if (!visibleIds.has(edge.source) || !visibleIds.has(edge.target)) continue;
       const a = local.get(edge.source), b = local.get(edge.target); if (!a || !b) continue;
@@ -366,15 +407,19 @@ export function startCommandCenter(doc, fetcher = fetch) {
   }
 
   function renderHex() {
-    const target = byId('ncPanelHex'), groups = groupCommandNodes(state.graph.nodes, byId('ncColor').value, state.graph);
+    const target = byId('ncPanelHex'), basis = byId('ncColor').value;
+    const groups = groupCommandNodes(state.graph.nodes, basis, state.graph, basis === 'component' ? graphComponents() : null);
     target.replaceChildren();
     if (!groups.length) { target.append(make('p', 'No hay entidades para agrupar con los filtros actuales.', 'meta')); return; }
     const fragment = doc.createDocumentFragment();
     for (const group of groups) {
       const wrap = make('article', undefined, 'nc-hex-wrap'), card = make('div', undefined, 'nc-hex-card');
       const button = make('button', group.name, 'nc-hex-select'); button.type = 'button';
-      button.setAttribute('aria-pressed', 'false');
-      const basis = byId('ncColor').value;
+      const selected = basis === 'component'
+        ? state.componentFocus === group.name && !state.groupFocus
+        : state.groupFocus?.basis === basis && state.groupFocus.name === group.name;
+      button.setAttribute('aria-pressed', String(Boolean(selected)));
+      card.dataset.selected = String(Boolean(selected));
       button.setAttribute('aria-label', `${group.name}: ${group.count} entidades, agrupadas por ${basis}`);
       button.addEventListener('click', () => {
         if (basis === 'component') {
@@ -595,13 +640,27 @@ export function startCommandCenter(doc, fetcher = fetch) {
       projects: '#projectInventory', decisions: '#decisionPanel', coding: '#knowledgePanel', security: '#knowledgePanel',
       cyber: '#cyberPanel', sources: '#sourcesPanel', audit: '#auditPanel', documents: '#results',
     };
+    const target = legacy?.querySelector(map[name] || '#results');
+    const disclosure = target?.closest('details');
+    if (disclosure) disclosure.open = true;
     if (name === 'coding' || name === 'security') {
       byId('knowledgeMode').value = name === 'coding' ? 'coding' : 'security';
       byId('knowledgeMode').dispatchEvent(new Event('change', {bubbles: true}));
     }
-    const target = legacy?.querySelector(map[name] || '#results');
-    target?.scrollIntoView({behavior: state.reducedMotion ? 'auto' : 'smooth', block: 'start'});
-    target?.focus?.({preventScroll: true});
+    const moduleButtons = [...root.querySelectorAll('[data-module]')];
+    for (const button of moduleButtons) {
+      if (button.dataset.module === name) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
+    }
+    if (!target) return;
+    target.scrollIntoView({behavior: state.reducedMotion ? 'auto' : 'smooth', block: 'start'});
+    const panel = target.closest('details,section') || target;
+    const focusTarget = panel.matches('details') ? panel.querySelector(':scope > summary') : panel.querySelector('h2,h3') || target;
+    if (focusTarget) {
+      if (!focusTarget.hasAttribute('tabindex')) focusTarget.setAttribute('tabindex', '-1');
+      focusTarget.classList.add('module-focus-target');
+      focusTarget.focus?.({preventScroll: true});
+    }
   }
 
   function selectOrbitNode(id) {
@@ -740,18 +799,18 @@ export function startCommandCenter(doc, fetcher = fetch) {
     byId('ncTypography').addEventListener('change', event => {
       root.style.fontFamily = event.target.value === 'mono' ? 'ui-monospace,Consolas,monospace' : 'system-ui,Segoe UI,sans-serif'; savePreferences();
     });
-    byId('ncCenter').addEventListener('click', () => { state.panX = 0; state.panY = 0; state.zoom = 1; state.componentFocus = null; state.groupFocus = null; byId('ncZoomPref').value = '100'; drawOrbit(); savePreferences(); });
+    byId('ncCenter').addEventListener('click', () => { state.panX = 0; state.panY = 0; state.zoom = 1; state.componentFocus = null; state.groupFocus = null; byId('ncZoomPref').value = '100'; renderHex(); drawOrbit(); savePreferences(); });
     byId('ncLoadMore').addEventListener('click', () => { const next = Math.min(1000, state.offset + 120); if (next > state.offset) void loadGraph(next); });
     byId('ncShowLabels').addEventListener('change', event => { state.labels = event.target.checked; drawOrbit(); savePreferences(); });
-    byId('ncReducedMotion').addEventListener('change', event => { state.reducedMotion = event.target.checked; event.currentTarget.setAttribute('aria-pressed', String(event.target.checked)); savePreferences(); });
-    byId('ncLowMotion').addEventListener('click', event => { const toggle = byId('ncReducedMotion'); toggle.checked = !toggle.checked; toggle.dispatchEvent(new Event('change', {bubbles: true})); event.currentTarget.setAttribute('aria-pressed', String(toggle.checked)); });
+    byId('ncReducedMotion').addEventListener('change', event => { syncReducedMotion(event.target.checked); savePreferences(); });
+    byId('ncLowMotion').addEventListener('click', () => { const toggle = byId('ncReducedMotion'); syncReducedMotion(!toggle.checked); savePreferences(); });
     byId('ncZoomPref').addEventListener('input', event => { state.zoom = Number(event.target.value) / 100; drawOrbit(); savePreferences(); });
     byId('ncResetPrefs').addEventListener('click', () => {
       try { localStorage.removeItem('rabanito.ui.theme'); localStorage.removeItem('rabanito.ui.preferences'); } catch { /* continue with defaults */ }
       root.style.removeProperty('--left-width'); root.style.removeProperty('--right-width');
-      byId('ncDensity').value = '180'; byId('ncNodeSize').value = '6'; byId('ncMinDegree').value = '0'; byId('ncZoomPref').value = '100'; byId('ncOpacity').value = '92'; byId('ncLinkBrightness').value = '62'; byId('ncLinkWidth').value = '1'; byId('ncOrbitSpacing').value = '100'; byId('ncRenderQuality').value = '150'; byId('ncFontScale').value = '100'; byId('ncTypography').value = 'system'; byId('ncShowLabels').checked = true; byId('ncReducedMotion').checked = false;
+      byId('ncDensity').value = '180'; byId('ncNodeSize').value = '6'; byId('ncMinDegree').value = '0'; byId('ncZoomPref').value = '100'; byId('ncOpacity').value = '92'; byId('ncLinkBrightness').value = '62'; byId('ncLinkWidth').value = '1'; byId('ncOrbitSpacing').value = '100'; byId('ncRenderQuality').value = '150'; byId('ncFontScale').value = '100'; byId('ncTypography').value = 'system'; byId('ncShowLabels').checked = true; syncReducedMotion(prefersReducedMotion());
       root.style.setProperty('--nc-panel-alpha', '92%'); root.style.fontSize = '100%'; root.style.fontFamily = 'system-ui,Segoe UI,sans-serif';
-      state.zoom = 1; state.labels = true; state.reducedMotion = false; setTheme('raven-neon'); drawOrbit();
+      state.zoom = 1; state.labels = true; setTheme('raven-neon'); drawOrbit();
     });
     byId('ncOpenOriginal').addEventListener('click', async () => {
       if (!state.selectedDocument) return;
