@@ -11,9 +11,9 @@ const fixture = true;
 const largeFixture = process.argv.includes('--large');
 const project = {project_id: 7001, name: 'Fixture Core', status: 'active', relative_path: 'fixture/core', technologies: ['Python', 'SQLite']};
 const seedDocuments = [
-  {document_id: 7101, title: 'Fixture — Arquitectura de memoria local', source_kind: 'projects', category: 'technical', project_name: 'Fixture Core', relative_path: 'README.md', mtime_iso: '2026-10-15T10:00:00Z', degree: 2, tags: ['fixture', 'arquitectura'], frontmatter: {status: 'fixture'}, links: [], incoming_links: []},
-  {document_id: 7102, title: 'Fixture — Indexación incremental de notas', source_kind: 'obsidian', category: 'research', project_name: '', relative_path: 'Research/Indexación.md', mtime_iso: '2026-10-14T09:00:00Z', degree: 2, tags: ['fixture', 'obsidian'], frontmatter: {source: 'fixture'}, links: [], incoming_links: []},
-  {document_id: 7103, title: 'Fixture — Recuperación con citas verificables', source_kind: 'internal', category: 'coding-memory', project_name: 'Fixture Core', relative_path: 'knowledge/coding-memory/demo.md', mtime_iso: '2026-10-13T12:00:00Z', degree: 1, tags: ['fixture', 'retrieval'], frontmatter: {validation: 'fixture'}, links: [], incoming_links: []},
+  {document_id: 7101, title: 'Fixture — Arquitectura de memoria local', source_kind: 'projects', category: 'technical', project_id: 7001, project_name: 'Fixture Core', relative_path: 'README.md', mtime_iso: '2026-10-15T10:00:00Z', degree: 2, tags: ['fixture', 'arquitectura'], frontmatter: {status: 'fixture'}, links: [], incoming_links: []},
+  {document_id: 7102, title: 'Fixture — Indexación incremental de notas', source_kind: 'obsidian', category: 'research', project_id: null, project_name: '', relative_path: 'Research/Indexación.md', mtime_iso: '2026-10-14T09:00:00Z', degree: 2, tags: ['fixture', 'obsidian'], frontmatter: {source: 'fixture'}, links: [], incoming_links: []},
+  {document_id: 7103, title: 'Fixture — Recuperación con citas verificables', source_kind: 'internal', category: 'coding-memory', project_id: 7001, project_name: 'Fixture Core', relative_path: 'knowledge/coding-memory/demo.md', mtime_iso: '2026-10-13T12:00:00Z', degree: 1, tags: ['fixture', 'retrieval'], frontmatter: {validation: 'fixture'}, links: [], incoming_links: []},
 ];
 const documents = largeFixture ? Array.from({length: 1000}, (_, index) => {
   const seed = seedDocuments[index % seedDocuments.length];
@@ -34,7 +34,7 @@ const edges = largeFixture
       {source: 7102, target: 7103, kind: 'suggested', status: 'suggested', relation_type: 'similarity-candidate'},
     ];
 const graph = {
-  nodes: documents.map(({document_id, title, source_kind, category, project_name, relative_path, mtime_iso, degree}) => ({document_id, title, source_kind, category, project_name, relative_path, mtime_iso, degree})),
+  nodes: documents.map(({document_id, title, source_kind, category, project_id, project_name, relative_path, mtime_iso, degree}) => ({document_id, title, source_kind, category, project_id, project_name, relative_path, mtime_iso, degree})),
   edges, node_limit: largeFixture ? 1000 : 180, total_matches: documents.length, truncated: false,
 };
 const stats = {fixture, documents_active: documents.length, relations_resolved: edges.filter(edge => edge.kind === 'explicit').length, relations_suggested: edges.filter(edge => edge.kind === 'suggested').length, links_broken: 0, links_ambiguous: 0, projects: 1, unique_tags: 3, latest_scan: {status: 'ok', finished_at: '2026-10-15T10:00:00Z'}};
@@ -71,15 +71,33 @@ const server = http.createServer(async (request, response) => {
     let payload = {}; try { payload = body ? JSON.parse(body) : {}; } catch { return json(response, {error: 'Invalid JSON'}, 400); }
     if (url.pathname === '/api/graph') {
       const requestedLimit = Math.min(1000, Math.max(1, Number(payload.limit) || 180));
-      const nodes = graph.nodes.slice(0, requestedLimit), nodeIds = new Set(nodes.map(node => String(node.document_id)));
-      const filtered = {...graph, nodes, edges: graph.edges.filter(edge => nodeIds.has(String(edge.source)) && nodeIds.has(String(edge.target))), node_limit: requestedLimit, total_matches: graph.nodes.length, truncated: nodes.length < graph.nodes.length, fixture};
+      const query = String(payload.q || '').trim().toLocaleLowerCase();
+      const category = String(payload.category || '').trim().toLocaleLowerCase();
+      const matches = graph.nodes.filter(node =>
+        (!payload.source || node.source_kind === String(payload.source)) &&
+        (!payload.project_id || String(node.project_id ?? '') === String(payload.project_id)) &&
+        (!category || String(node.category || '').toLocaleLowerCase().startsWith(category)) &&
+        (!query || `${node.title} ${node.relative_path}`.toLocaleLowerCase().includes(query))
+      );
+      const nodes = matches.slice(0, requestedLimit), nodeIds = new Set(nodes.map(node => String(node.document_id)));
+      const filtered = {...graph, nodes, edges: graph.edges.filter(edge => nodeIds.has(String(edge.source)) && nodeIds.has(String(edge.target))), node_limit: requestedLimit, total_matches: matches.length, truncated: matches.length > requestedLimit, fixture};
       const includeSuggestions = payload.suggestions === true || ['1', 'true', 'yes'].includes(String(payload.suggestions ?? '').toLowerCase());
       if (!includeSuggestions) filtered.edges = filtered.edges.filter(edge => edge.kind !== 'suggested');
       return json(response, filtered);
     }
     if (url.pathname === '/api/search') {
       const q = String(payload.q || '').toLocaleLowerCase();
-      return json(response, {results: documents.filter(item => `${item.title} ${item.category}`.toLocaleLowerCase().includes(q)).slice(0, Math.min(20, Number(payload.limit) || 20)).map(item => ({...item, snippet: `Fragmento sintético de prueba para ${item.title}.`, query_match: {matched_terms: 1, total_terms: 1, complete: true}}))});
+      const category = String(payload.category || '').trim().toLocaleLowerCase();
+      const tag = String(payload.tag || '').trim().replace(/^#/, '').toLocaleLowerCase();
+      const results = documents.filter(item =>
+        (!q || `${item.title} ${item.category} ${item.relative_path} ${item.tags.join(' ')}`.toLocaleLowerCase().includes(q)) &&
+        (!payload.source || item.source_kind === String(payload.source)) &&
+        (!payload.project_id || String(item.project_id ?? '') === String(payload.project_id)) &&
+        (!category || String(item.category || '').toLocaleLowerCase().startsWith(category)) &&
+        (!tag || item.tags.some(value => value.toLocaleLowerCase() === tag))
+      );
+      const limit = Math.min(20, Math.max(1, Number(payload.limit) || 20));
+      return json(response, {results: results.slice(0, limit).map(item => ({...item, snippet: `Fragmento sintético de prueba para ${item.title}.`, query_match: {matched_terms: 1, total_terms: 1, complete: true}}))});
     }
     if (url.pathname === '/api/context') {
       const q = String(payload.q || 'consulta sintética');
@@ -92,6 +110,6 @@ const server = http.createServer(async (request, response) => {
   json(response, {error: 'Not found'}, 404);
 });
 
-server.listen(port, '127.0.0.1', () => process.stdout.write(`Synthetic-only Rabanito UI fixture${largeFixture ? ' (1,000 documents)' : ''} at http://127.0.0.1:${port}/\n`));
+server.listen(port, '127.0.0.1', () => process.stdout.write(`Synthetic-only Rabanito UI fixture${largeFixture ? ' (1,000 documents)' : ''} at http://127.0.0.1:${server.address().port}/\n`));
 server.on('error', error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
 process.on('SIGINT', () => server.close(() => process.exit(0)));

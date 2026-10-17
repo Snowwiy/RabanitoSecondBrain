@@ -7,6 +7,7 @@
 - Branch: `Frontend-Design`; base audited at `4474bfc91bcc8145b1573dfa36831c5626c5fd76`.
 - Frontend-only edits; no source edits in the original Second Brain checkout, Sol’s backend work, the SQLite index, Obsidian, Hermes, or other projects.
 - Video reference: inspected representative frames from the user-provided MP4; adapted radial, hexagonal and three-panel composition without third-party assets.
+- The user supplied the Neural Command Center mission and acceptance areas in this conversation. `UI_MASTER_SPEC.md` is now the durable implementation brief; no verbatim prompt artifact is required.
 
 ## Implemented in this UI phase
 
@@ -20,7 +21,7 @@
 - Search uses `/api/search`; Inspector uses `/api/doc/{id}` and capped `/api/context`, includes relative-path citations and links, uses text-only rendering, and opens originals only through `/api/open/{id}`.
 - Existing legacy panels remain available in a collapsed workbench.
 - Local fixture-only server for browser QA marks synthetic payloads and disables source opening.
-- Added and allowlisted architecture, API contract, integration plan, backlog, test record and next-session continuity documents; no personal absolute paths in the published records.
+- Added and allowlisted the master specification, architecture, API contract, integration plan, backlog, test record and next-session continuity documents; no personal absolute paths in the published records.
 - Visual QA found long search cards overflowing horizontally in the narrow explorer; changed them to stacked, wrapping cards and added a regression test.
 - Search explicitly uses `novalidate` because empty-query feedback is owned by its inline live status region.
 - The graph summary now says how many entities matched and how many relations were loaded, so local Orbit filters do not leave a false visible-count claim.
@@ -33,11 +34,15 @@
 - Module navigation now opens a target `<details>`, updates the matching `aria-current`, and focuses its visible summary/heading. The Explorer and Inspector toggles now point `aria-controls` at the panels they actually control.
 - Legacy authorized source opening now reports pending, success, HTTP failure and connection failure in the existing live status region; it no longer invokes a blocking browser alert.
 - The command-center Inspector now requires `/api/open/{id}` to return `opened: true` before announcing success; HTTP 200 with `opened: false` is announced as a recoverable failure without exposing server details.
-- Added a capability-by-capability implementation/evidence/gap matrix in `UI_TASK_BACKLOG.md`. The original master prompt was searched for in this worktree, hidden/ignored repo files, tracked history and the separate main checkout; it was not found, so the comparison is provisional against available UX/API contracts.
+- Added a capability-by-capability implementation/evidence/gap matrix in `UI_TASK_BACKLOG.md`, reconciled against the user-provided mission captured in `UI_MASTER_SPEC.md`.
+- The synthetic fixture now applies source, project ID, category-prefix and title/path query filters to graph requests, and source/project/category-prefix/query/exact-tag filters to search. Graph `total_matches`, `truncated` and visible-edge endpoints are computed after filtering. Project metadata is carried on synthetic graph nodes.
+- Added an API-level fixture test that starts a fresh loopback-only server on a temporary port and proves each filter, combined search filters and graph truncation without contacting the real service or database.
+- Browser-verified Orbit source filters (Projects: 1 node; Obsidian with query “Indexación” and category `research`: 1 node), project filter (Fixture Core: 2 nodes/1 explicit edge), and category filter (`technical`: 1 node). Legacy dashboard search with query “Recuperación”, category prefix `coding`, exact tag `#retrieval`, and Fixture Core project returned only the matching synthetic record.
+- Added `UI_MASTER_SPEC.md` with mission, acceptance criteria, implementation evidence, ordered open work, and branch/data safeguards.
 
 ## Verification evidence
 
-- Node UI suites: **64 passed, 0 failed, 0 skipped**. Regression coverage includes module navigation, active Hex selection state, synchronized reduced-motion controls, Orbit and Galaxy cache invalidation, and source-open feedback that requires explicit server confirmation, alongside prior search, graph-count, hit-testing and safe-reference cases.
+- Node UI suites: **65 passed, 0 failed, 0 skipped**. Regression coverage includes the loopback fixture API filter test, module navigation, active Hex selection state, synchronized reduced-motion controls, Orbit and Galaxy cache invalidation, and source-open feedback that requires explicit server confirmation, alongside prior search, graph-count, hit-testing and safe-reference cases.
 - Python suite: **290 run, 289 passed, 1 skipped, 0 failed**.
 - Premium strict audit (no-write): **32 errors, 0 warnings**. All 32 are static detections of literal buttons without inline action; application behavior is wired from external modules/delegated handlers and representative command-center search, tabs, inspector and panel-collapse actions were confirmed in browser. This audit does not prove every legacy action; remaining audit finding stays documented for review rather than adding fake inline handlers.
 - Browser QA against isolated synthetic fixtures: search returned three fixture-only records; selecting one showed metadata, tags, cited bounded fragment and explicit neighbors. Orbit/Hex/Galaxy/Tree switched correctly, legacy graph mounted, panel collapse/restore worked, and preferences disclosed. A fixed card-wrapping regression was confirmed visually. Fixture banner remained visible.
@@ -53,4 +58,4 @@
 
 ## Next action
 
-Continue through the open priorities in `UI_TASK_BACKLOG.md`; do not treat the passing tests or this checkpoint as completion of the full redesign. The original master prompt must be reconciled once its source is available. Keep the frontend on its documented fallback until backend API changes are reviewed and integrated through their own branch. Do not touch `main` or the original worktree.
+Continue through the open priorities in `UI_TASK_BACKLOG.md`; do not treat the passing tests or this checkpoint as completion of the full redesign. Keep the frontend on its documented fallback until backend API changes are reviewed and integrated through their own branch. Do not touch `main` or the original worktree.

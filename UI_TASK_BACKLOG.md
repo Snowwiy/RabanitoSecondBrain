@@ -9,7 +9,12 @@
 - [x] Keep suggested relations distinct and avoid invented hierarchy/community claims.
 - [x] Add local synthetic fixture server and pure-function/XSS-boundary tests.
 - [x] Document current API boundary and integration limitations.
-- [x] Run 64 Node UI tests and 290 Python tests (1 skipped); `git diff --check` passes.
+- [x] Run the original 64-test Node baseline and 290 Python tests (1 skipped); the current Node suite now has 65 tests, while Python is unchanged in the fixture-only phase.
+- [x] Capture the user-provided Neural Command Center mission and acceptance criteria in `UI_MASTER_SPEC.md`.
+- [x] Bring the synthetic `/api/search` and `/api/graph` fixture into parity for source, project, category-prefix, query and exact-tag filtering; calculate graph totals after filtering.
+- [x] Add an isolated API functional test proving each search/graph filter, combined filters and graph truncation; no production server or database is used.
+- [x] Browser-verify Orbit source/project/category/query filtering and the dashboard's query/category/exact-tag/project combination against the updated synthetic fixture.
+- [x] Run all 65 Node UI tests and `git diff --check`; the Python suite was not rerun because this phase changes only frontend test fixtures and UI continuity documents.
 - [x] Final synthetic browser smoke pass: search/selection/inspector, four view tabs, legacy graph mount, panel collapse/restore and preference disclosure.
 - [x] Fix narrow search-card horizontal overflow and add a regression check.
 - [x] Add an accessible clear action to global search; invalidate pending responses, reset the view, and return focus to the query field.
@@ -29,7 +34,7 @@
 
 ## Coverage audit and remaining work
 
-The requested original Neural Command Center master prompt is not present in the `Frontend-Design` worktree or the separate main checkout (including hidden/ignored file-name search), and no tracked Git revision contains it. This table therefore compares the implementation against the repository’s available `UX-CONTRACT.md`, `UI_ARCHITECTURE.md`, API contract and tests. It is provisional until the original prompt is supplied; no missing requirements are inferred from its title.
+The user supplied the Neural Command Center mission and acceptance areas in this conversation. `UI_MASTER_SPEC.md` now records them as the working specification; the original prompt's verbatim wording is not required. Status statements below refer to committed implementation or actual evidence, and list unavailable or unverified behavior as open work.
 
 | Capability | Implemented on `Frontend-Design` | Evidence actually run | Open gap |
 |---|---|---|---|
@@ -39,19 +44,18 @@ The requested original Neural Command Center master prompt is not present in the
 | Knowledge Tree | Lists documents grouped by verified project metadata and separately lists explicit graph relations (bounded to 160 rendered edges). | Grouping tests and synthetic-browser tab smoke. | It is not a source-backed architecture hierarchy; a typed graph endpoint is absent from this branch. |
 | Markdown inspector | Shows safe metadata, bounded cited retrieval fragments, explicit neighbors and an authorized source-open action with live pending/success/failure feedback; success requires the API's explicit `opened: true`. | Browser QA confirmed the synthetic `opened: false` response is announced as failure; unit coverage checks `opened: true`, `opened: false`, HTTP failure and connection failure. | Full Markdown body cannot be read until an ID-only, bounded, authorized content endpoint exists and is reviewed. |
 | Personalization | Five themes; local layout, typography, density, zoom, color, labels, link appearance and reduced-motion preferences; no knowledge queries persisted. | Theme and preference browser smoke; latest phase checked both reduced-motion controls in the browser accessibility tree. | No screen-reader/forced-colors certification. |
-| Filters | Query, project, source and category API filters; Orbit depth, minimum degree, suggestions, density and coloring controls. | Existing API/UI regression suites; synthetic-browser search and minimum-degree smoke. | Not every control has a separate end-to-end browser case; real-index filter behavior awaits integration QA. |
+| Filters | Query, project, source and category API filters; Orbit depth, minimum degree, suggestions, density and coloring controls. | All four `/api/graph` filters and source/project/category/query/tag `/api/search` filters now have isolated API functional coverage. Browser QA verified Orbit source, project, category and query; dashboard query + category + exact tag + project returned only the matching synthetic record. | Real-index filter behavior awaits safe integration QA; fixture content remains synthetic. |
 | Navigation | Roving tabs, keyboard/pointer node selection, arrows, Escape, search results, inspector neighbors, Tree and Hex actions, module disclosures, current-module state, keyboard and pointer splitters. | Node keyboard tests; synthetic-browser module navigation opened Projects, Coding Memory and Cyber panels and focused their headings/summaries; pointer dragging changed the Explorer's accessible width from 230 to 244. | Screen-reader certification remains open. |
 | Performance | Request cap 1,000; Orbit reuses adjacency/components/positions, and Galaxy reuses a node/adjacency index until a new graph arrives. | Node regression suite plus synthetic-browser render/interaction smoke through 1,000 nodes across Orbit, Hex, legacy Galaxy and Tree; responsive geometry checked at exact 1920×1080 and 2560×1440. | No measured 1,000-node/real-index frame-time or memory profile; caches reduce repeated derivation but are not performance certification. |
 
 ### Open in priority order
 
-1. Obtain the original master prompt from its author/path and reconcile this provisional matrix line by line; continue using the repository UX contract until then.
-2. Keep the typed cross-entity graph and full Markdown reader pending until the corresponding backend endpoints are committed and reviewed; do not synthesize entities or content.
-3. Capture frame-time/memory measurements for the synthetic 1,000-node graph if the browser exposes profiling. Exact 1920×1080 / 2560×1440 geometry is now checked with no horizontal overflow; wide screenshots are capped at 1280px. The 1,000-node render smoke is complete; do not claim production performance from synthetic data.
-4. Complete screen-reader/zoom checks when the browser exposes reliable inspection. Keyboard and pointer splitter resizing and narrow/desktop layout checks are already covered.
-5. Review the premium static audit’s 32 `actionless-button` findings against the delegated handlers and manually test the remaining legacy controls; do not add fake inline handlers.
-6. After the backend branch is reviewed, feature-detect the typed graph and authorized Markdown-content APIs, retain current fallbacks, and run UI + Python regression tests without indexing, syncing or writing SQLite.
-7. Review shared-file conflicts with the backend author; never overwrite their changes. Any later PR/merge is separate from this branch task.
+1. Review the remaining premium static audit `actionless-button` findings against delegated handlers and manually exercise safe read-only legacy controls; do not add fake inline handlers or trigger indexing/sync/write actions.
+2. Add a screen-reader-friendly path for inspecting graph nodes if it can remain bounded for 1,000-node responses; then verify with available accessibility-tree tooling. Full assistive-technology certification remains open.
+3. Keep the typed cross-entity graph and full Markdown reader pending until the corresponding authorized backend endpoints are committed and reviewed; do not synthesize entities or content.
+4. Capture frame-time/memory measurements for the synthetic 1,000-node graph if the browser exposes profiling. Exact 1920×1080 / 2560×1440 geometry is checked with no horizontal overflow; the 1,000-node render smoke is not production performance certification.
+5. After backend changes are independently reviewed, feature-detect the typed graph and authorized Markdown-content APIs, retain current fallbacks, and run UI + Python regression tests without indexing, syncing or writing SQLite.
+6. Review shared-file conflicts with the backend author; never overwrite their changes. Any later PR/merge is separate from this branch task.
 
 ## Explicitly out of scope here
 
