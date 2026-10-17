@@ -190,6 +190,26 @@
     .nc-inspector-section { border-top:1px solid #263d43; padding-top:9px; margin-top:9px; }
     .nc-inspector-section h4 { margin:0 0 6px; color:var(--accent); font-size:10px; letter-spacing:.07em; text-transform:uppercase; }
     .nc-fragment { margin:7px 0; padding:8px; border-left:2px solid var(--nc-cyan); background:#0d1a20; color:#d0dedb; white-space:pre-wrap; overflow-wrap:anywhere; font:11px/1.5 ui-monospace,Consolas,monospace; }
+    .nc-markdown-tools { display:grid; gap:7px; }
+    .nc-markdown-tools form { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:5px; align-items:end; }
+    .nc-markdown-tools form[hidden] { display:none; }
+    .nc-markdown-tools label { grid-column:1/-1; color:var(--muted); font-size:10px; }
+    .nc-markdown-tools input { min-width:0; }
+    .nc-markdown-content { max-height:640px; overflow:auto; padding:10px; border:1px solid #263d43; border-radius:6px; background:#091318; overflow-wrap:anywhere; }
+    .nc-markdown-content h1,.nc-markdown-content h2,.nc-markdown-content h3,.nc-markdown-content h4,.nc-markdown-content h5,.nc-markdown-content h6 { color:var(--accent); line-height:1.3; }
+    .nc-markdown-content p,.nc-markdown-content li,.nc-markdown-content blockquote { font-size:12px; line-height:1.6; }
+    .nc-markdown-content ul,.nc-markdown-content ol { padding-left:22px; }
+    .nc-markdown-content pre { max-width:100%; overflow:auto; padding:9px; background:#0d1a20; border-radius:5px; white-space:pre; }
+    .nc-markdown-content code { font:11px/1.5 ui-monospace,Consolas,monospace; }
+    .nc-markdown-content table { width:100%; border-collapse:collapse; font-size:11px; }
+    .nc-markdown-content th,.nc-markdown-content td { border:1px solid #35484c; padding:5px; text-align:left; vertical-align:top; }
+    .nc-markdown-content blockquote { margin:8px 0; padding-left:10px; border-left:2px solid var(--nc-cyan); color:var(--muted); }
+    .nc-markdown-content a { color:var(--accent); }
+    .nc-markdown-content button { padding:2px 4px; color:var(--accent); background:transparent; border:0; text-decoration:underline; }
+    .nc-markdown-content mark { background:#e9c768; color:#172024; border-radius:2px; }
+    .nc-markdown-status { min-height:1.3em; color:var(--muted); font-size:10px; }
+    .nc-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    @media(max-width:430px) { .nc-markdown-tools form { grid-template-columns:minmax(0,1fr) auto; } .nc-markdown-tools form button:last-of-type { grid-column:2; } }
     .nc-neighbor-list { display:grid; gap:4px; max-height:240px; overflow:auto; }
     .nc-neighbor-list button { padding:6px 7px; text-align:left; background:transparent; border-color:#263d43; font-size:10px; }
     .nc-preferences { border-top:1px solid #263d43; padding-top:10px; }
@@ -308,10 +328,12 @@
         <div class="nc-load-more"><button type="button" id="ncLoadMore">Cargar más nodos</button></div>
       </section>
       <div class="nc-resizer" role="separator" tabindex="0" aria-label="Cambiar ancho del inspector" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="460" aria-valuenow="306" data-panel="right"></div>
-      <aside class="nc-inspector" id="ncInspector" aria-label="Inspector de conocimiento" aria-live="polite">
+      <aside class="nc-inspector" id="ncInspector" aria-label="Inspector de conocimiento">
+        <div id="ncInspectorAnnouncement" class="nc-sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
         <div class="nc-panel-title"><div><div class="nc-eyebrow">Knowledge Inspector</div><h2>Entidad seleccionada</h2></div><span class="nc-label" id="ncInspectorType">Sin selección</span></div>
         <div class="nc-inspector-body" id="ncInspectorBody"><p class="nc-inspector-intro">Selecciona un nodo, resultado de búsqueda o elemento de una comunidad. Se mostrarán metadatos locales y fragmentos citados.</p></div>
         <div class="nc-inspector-section"><h4>Fragmentos citados</h4><div id="ncFragments" class="nc-inspector-intro">Aún no hay documento seleccionado.</div></div>
+        <section class="nc-inspector-section nc-markdown-tools" aria-labelledby="ncMarkdownHeading"><h4 id="ncMarkdownHeading">Documento Markdown</h4><button type="button" id="ncReadMarkdown" disabled>Leer documento completo</button><div id="ncMarkdownStatus" class="nc-markdown-status" role="status" aria-live="polite">Selecciona un documento para consultar el lector completo.</div><div id="ncMarkdownReader" hidden><form id="ncMarkdownSearch" role="search" novalidate hidden><label for="ncMarkdownQuery">Buscar dentro del documento</label><input id="ncMarkdownQuery" type="search" maxlength="100" autocomplete="off"><button type="button" id="ncMarkdownPrev" aria-label="Coincidencia anterior" disabled>Anterior</button><button type="button" id="ncMarkdownNext" aria-label="Siguiente coincidencia" disabled>Siguiente</button></form><div id="ncMarkdownSearchStatus" class="nc-markdown-status" role="status" aria-live="polite"></div><article id="ncMarkdownContent" class="nc-markdown-content" aria-label="Contenido Markdown del documento"></article><div class="nc-inspector-section"><h4>Referencias reconocidas</h4><ul id="ncMarkdownReferences"></ul></div></div></section>
         <div class="nc-inspector-section"><h4>Relaciones explícitas</h4><div id="ncNeighbors" class="nc-neighbor-list"><span class="meta">Selecciona una entidad para explorar vecinos.</span></div></div>
         <div class="nc-inspector-section"><h4>Acciones seguras</h4><div class="toolbar"><button type="button" id="ncOpenOriginal" disabled>Abrir fuente autorizada</button><button type="button" id="ncGetContext" disabled>Recuperar contexto</button></div><div class="nc-label" id="ncSourceRef">No se expone la ruta absoluta de la fuente.</div></div>
         <details class="nc-preferences"><summary>Preferencias locales</summary>

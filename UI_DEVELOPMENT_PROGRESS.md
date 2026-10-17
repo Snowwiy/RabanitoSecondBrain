@@ -19,6 +19,7 @@
 - Knowledge Tree grouped by project metadata with explicit relation list; no fabricated architecture levels.
 - Existing Knowledge Galaxy 3D controls/canvas are moved into the central tab and retained.
 - Search uses `/api/search`; Inspector uses `/api/doc/{id}` and capped `/api/context`, includes relative-path citations and links, uses text-only rendering, and opens originals only through `/api/open/{id}`.
+- Inspector now has a user-triggered Markdown reader adapter for the proposed `POST /api/doc/content` contract. It validates ID/byte fields, parses a bounded Markdown subset through safe DOM constructors, treats raw HTML as text, limits external URLs and resolves internal links only through response references. If production returns 404, it states the backend blocker and preserves the existing Inspector.
 - Existing legacy panels remain available in a collapsed workbench.
 - Local fixture-only server for browser QA marks synthetic payloads and disables source opening.
 - Added and allowlisted the master specification, architecture, API contract, integration plan, backlog, test record and next-session continuity documents; no personal absolute paths in the published records.
@@ -53,7 +54,7 @@
 
 ## Verification evidence
 
-- Node UI suites: **71 passed, 0 failed, 0 skipped**. Regression coverage includes bounded accessible Orbit pagination, legacy search/context live announcements, the loopback fixture API filter test, persistent visual preferences without knowledge-content storage, module navigation, active Hex selection state, synchronized reduced-motion controls, Orbit and Galaxy cache invalidation, explicit-edge community detection and source-open feedback that requires explicit server confirmation, alongside prior search, graph-count, hit-testing and safe-reference cases.
+- Node UI suites: **75 passed, 0 failed, 0 skipped**. Coverage includes the bounded safe Markdown parser and synthetic reader route, reference authorization, inert HTML, byte caps, synthetic transport interruption, and the prior graph, navigation, filter and accessibility regressions.
 - Python suite: **290 run, 289 passed, 1 skipped, 0 failed**.
 - Premium strict audit (no-write): **32 errors, 0 warnings**. An audit-equivalent HTML scan matched all 32 findings to real ID-bound or `data-module`/`data-view` JavaScript handlers; strict mode still reports them because it cannot trace handlers. No inert button or need for an inline no-op was found. Safe read-only controls were exercised; mutation controls were not activated.
 - Browser QA against isolated synthetic fixtures: search returned three fixture-only records; selecting one showed metadata, tags, cited bounded fragment and explicit neighbors. Orbit/Hex/Galaxy/Tree switched correctly, legacy graph mounted, panel collapse/restore worked, and preferences disclosed. A fixed card-wrapping regression was confirmed visually. Fixture banner remained visible.
@@ -77,4 +78,13 @@
 
 ## Next action
 
-Continue through the open priorities in `UI_TASK_BACKLOG.md`; do not treat the passing tests or this checkpoint as completion of the full redesign. Keep the frontend on its documented fallback until backend API changes are reviewed and integrated through their own branch. Do not touch `main` or the original worktree.
+Continue through the open priorities in `UI_TASK_BACKLOG.md`; do not treat the passing tests or this checkpoint as completion of the full redesign. The reader adapter is ready for reviewed backend integration but the real branch API still has no `/api/doc/content` route. Keep the metadata/context fallback until the backend endpoint is independently reviewed and integrated. Do not touch `main` or the original worktree.
+
+## Markdown reader adapter phase (2026-10-17)
+
+- Added a bounded parser for headings, paragraphs, lists, tables, fenced code, block quotes, rules, inline code/emphasis, safe external links and reference-authorized internal links. It caps input at 65,536 characters, 4,096 lines, 2,048 blocks, 200 list/table rows per block and 512 reference records. It creates DOM elements/text nodes only; no `innerHTML` path was added.
+- Added the user-triggered `POST /api/doc/content` adapter with strict selected-ID/response validation, UTF-8 byte accounting, stale-request gates, loading, 404/413/contract/network error states, and a responsive in-document search with highlighted matches and previous/next navigation.
+- Separated a concise atomic live status from the full reader DOM so loading a long note does not announce the entire body at once. Internal document links dispatch through the existing selection flow; raw HTML and unknown local paths stay inert text.
+- The committed production API does not implement `/api/doc/content`. The adapter therefore remains production-blocked until an authorized ID-only backend route is independently implemented and reviewed; the reader route in the local visual fixture is explicitly synthetic and is not production integration.
+- The synthetic browser rendered headings, list items, table headers/rows, code, a safe external link, internal reference, source citation and inert `<img ... onerror=...>` text. In-document search found three occurrences and navigation advanced from 1/3 to 2/3. Browser DOM checks found zero `<img>`/`<script>` elements and no horizontal overflow at the 694px browser viewport. Missing-endpoint fixture showed the 404 fallback and retained metadata/fragments.
+- Final validation: 75 Node tests passed; syntax checks for the UI, fixture server and changed test modules passed; `git diff --check` passed. The premium strict audit returned 32 markup-only `actionless-button` findings (0 warnings), all matched to real ID-bound or delegated JavaScript handlers. Synthetic browser QA at 694px confirmed keyboard reader search, internal selection, raw HTML remaining text, no injected image/script nodes and no horizontal overflow; 404 and transport-failure fixtures retained metadata/context and showed recoverable feedback. Screen-reader certification and true browser zoom remain unverified.

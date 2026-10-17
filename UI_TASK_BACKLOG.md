@@ -9,7 +9,7 @@
 - [x] Keep suggested relations distinct; label topology-derived communities as estimates and do not invent hierarchy or semantic labels.
 - [x] Add local synthetic fixture server and pure-function/XSS-boundary tests.
 - [x] Document current API boundary and integration limitations.
-- [x] Run the original 64-test Node baseline and 290 Python tests (1 skipped); subsequent frontend-only phases expanded the Node UI suite to 71 passing tests without changing Python implementation.
+- [x] Run the original 64-test Node baseline and 290 Python tests (1 skipped); subsequent frontend-only phases expanded the Node UI suite to 75 passing tests without changing Python implementation.
 - [x] Capture the user-provided Neural Command Center mission and acceptance criteria in `UI_MASTER_SPEC.md`.
 - [x] Bring the synthetic `/api/search` and `/api/graph` fixture into parity for source, project, category-prefix, query and exact-tag filtering; calculate graph totals after filtering.
 - [x] Add an isolated API functional test proving each search/graph filter, combined filters and graph truncation; no production server or database is used.
@@ -53,6 +53,9 @@
 - [x] Map all 32 premium static `actionless-button` findings to real ID-bound or `data-module`/`data-view` event handlers. No unbound button remained; the strict audit still reports these because it only analyzes literal markup, so no fake inline handlers were added.
 - [x] Browser-smoke a synthetic 1,000-node Orbit after loading all 999 explicit relations. Five ArrowRight selection action round trips had a median of 29 ms before and 21 ms after the cache-key fix; these timings include browser automation and are not isolated paint measurements.
 - [x] Run all 69 Node UI tests and `git diff --check`; the frontend-only phase does not change Python modules.
+- [x] Add a user-triggered, bounded Markdown reader adapter with a safe DOM-only parser, ID-authorized internal links, HTTP(S)-only external links, raw-HTML-as-text behavior, loading/error/404 states and in-document search.
+- [x] Extend the isolated fixture with explicitly synthetic Markdown success, 404 and transport-failure modes; cover bounded API responses, browser-rendered Markdown blocks, source references, internal navigation, search highlights, inert HTML, and visible failure recovery.
+- [x] Document the required ID-only `POST /api/doc/content` backend contract, production unavailability, fixture-only integration status and endpoint-to-component/test matrix.
 
 ## Coverage audit and remaining work
 
@@ -64,7 +67,7 @@ The user supplied the Neural Command Center mission and acceptance areas in this
 | Hex Knowledge | Groups by indexed category/source/project, explicit-edge connected components, or detected topological communities; group selection focuses Orbit and communities are numerically ordered. | Node grouping tests; synthetic browser selected a community, returned to Orbit and announced its non-semantic status; visual/AX inspection showed ordered community cards and explicit group labels for the 180-node/179-edge fixture. | Typed entities and semantic community labels are not available from the current backend. |
 | Knowledge Galaxy 3D | Existing Canvas 2D renderer with 3D projection/rotation and filters is moved into the central tab; graph indexes are cached per loaded graph. | Existing graph interaction tests; at 1,000 synthetic nodes, keyboard selection and community isolation rendered as expected with 999 explicit relations. | The typed cross-entity graph endpoint is absent. Renderer remains Canvas-based; WebGL was not part of the verified repository contract. |
 | Knowledge Tree | Lists documents grouped by verified project metadata and separately lists explicit graph relations (bounded to 160 rendered edges). | Grouping tests and synthetic-browser tab smoke. | It is not a source-backed architecture hierarchy; a typed graph endpoint is absent from this branch. |
-| Markdown inspector | Shows safe metadata, bounded cited retrieval fragments, explicit neighbors and an authorized source-open action with live pending/success/failure feedback; success requires the API's explicit `opened: true`. | Browser QA confirmed the synthetic `opened: false` response is announced as failure; unit coverage checks `opened: true`, `opened: false`, HTTP failure and connection failure. | Full Markdown body cannot be read until an ID-only, bounded, authorized content endpoint exists and is reviewed. |
+| Markdown inspector | Shows safe metadata, bounded cited retrieval fragments, explicit neighbors and authorized source-open action; also has a user-triggered full-body adapter with bounded safe DOM rendering, authorized internal links and in-document search. | Parser/API tests and synthetic-browser QA cover Markdown blocks, internal navigation, source references, search highlighting and raw HTML as inert text. | **Production body read blocked:** `/api/doc/content` is absent from the tested backend. The 404 status preserves the metadata/context/source-open fallback; fixture content is synthetic only. |
 | Personalization | Five themes; local layout, typography, density, zoom, transparency, color, labels, link appearance and reduced-motion preferences; no knowledge queries persisted. | Theme and reduced-motion browser smoke; transparency and text-scale values survived reload and were restored to defaults. | No screen-reader/forced-colors certification; browser zoom remains unverified. |
 | Filters | Query, project, source and category API filters; Orbit depth, minimum degree, suggestions, density and coloring controls. | Search/graph filter API coverage; browser QA verified Orbit and Dashboard query/source/category/tag/project. Read-only history/change refresh, audit report, decisions search, cited context, source preview and live result announcements were exercised. | Real-index filter behavior awaits safe integration QA; fixture content remains synthetic. |
 | Navigation | Roving tabs, keyboard/pointer node selection, arrows, Escape, search results, inspector neighbors, Tree and Hex actions, module disclosures, current-module state, keyboard and pointer splitters. | Node keyboard tests; synthetic-browser module navigation opened Projects, Coding Memory and Cyber panels and focused their headings/summaries; legacy search/context expose concise atomic live statuses; pointer dragging changed the Explorer's accessible width from 230 to 244. | Screen-reader certification remains open. |
@@ -72,15 +75,16 @@ The user supplied the Neural Command Center mission and acceptance areas in this
 
 ### Open in priority order
 
-1. Test the bounded Orbit node list with a screen reader and browser zoom if those tools are available; the browser accessibility tree verifies semantics and keyboard selection, not screen-reader certification. Current browser shortcuts did not change zoom.
-2. Keep the typed cross-entity graph and full Markdown reader pending until the corresponding authorized backend endpoints are committed and reviewed; do not synthesize entities or content.
-3. Use an isolated browser profiler for the 1,000-node frame-time/heap profile if one becomes available. The available browser driver only provided interaction round trips; exact 1920×1080 / 2560×1440 geometry and synthetic render smoke are not production performance certification.
-4. After backend changes are independently reviewed, feature-detect the typed graph and authorized Markdown-content APIs, retain current fallbacks, and run UI + Python regression tests without indexing, syncing or writing SQLite.
-5. Review shared-file conflicts with the backend author; never overwrite their changes. Any later PR/merge is separate from this branch task.
+1. Integrate and independently review the backend `POST /api/doc/content` contract, then verify the real endpoint through the ID-only adapter while preserving the 404 fallback. Never read a file through a caller-supplied path.
+2. Continue the typed cross-entity graph only when its read-only API contract is available and reviewed; keep the current document graph fallback.
+3. Test the bounded Orbit node list with a screen reader and browser zoom if reliable tools are available; browser AX/keyboard checks do not certify assistive technology. Current browser shortcuts did not change zoom.
+4. Use an isolated browser profiler for the 1,000-node frame-time/heap profile if one becomes available. Current interaction timings include browser automation overhead and are not frame-time certification.
+5. After backend changes are independently reviewed, run UI + Python regression tests without indexing, syncing or writing SQLite; review shared-file conflicts and never overwrite concurrent changes.
+6. Review shared-file conflicts with the backend author; never overwrite their changes. Any later PR/merge is separate from this branch task.
 
 ## Explicitly out of scope here
 
 - Editing backend modules, migrations, or the live SQLite database.
 - Installing UI packages, external assets, fonts, telemetry, or CDNs.
-- Full Markdown rendering before the backend offers an ID-only, authorized, bounded content endpoint.
+- Production full Markdown integration before the backend offers an ID-only, authorized, bounded content endpoint. The synthetic fixture reader is test-only and does not serve production data.
 - Claiming WebGL, semantic communities, architecture hierarchy, or production performance tests that have not been implemented and verified.

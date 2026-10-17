@@ -63,6 +63,20 @@ test('synthetic fixture API applies the dashboard search and graph filters', {ti
     [3, 3, 0, 0, 0, 0, 0],
   );
 
+  const markdown = await postJson(base, '/api/doc/content', {document_id: 7101, max_bytes: 65_536});
+  assert.equal(markdown.fixture, true);
+  assert.equal(markdown.document_id, 7101);
+  assert.equal(markdown.truncated, false);
+  assert.equal(markdown.bytes_returned, Buffer.byteLength(markdown.content_markdown, 'utf8'));
+  assert.match(markdown.content_markdown, /<img src=x onerror=/);
+  assert.equal(markdown.references[0].target_document_id, 7102);
+  assert.equal(Object.hasOwn(markdown, 'absolute_path'), false);
+
+  const rejectedReader = await fetch(`${base}/api/doc/content`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({document_id: 7101, max_bytes: 99_999}),
+  });
+  assert.equal(rejectedReader.status, 400);
+
   const auditResponse = await fetch(`${base}/api/audit/latest`);
   assert.equal(auditResponse.status, 200);
   const audit = await auditResponse.json();
@@ -133,4 +147,32 @@ test('synthetic fixture API applies the dashboard search and graph filters', {ti
 
   const mismatchedSearch = await postJson(base, '/api/search', {source: 'obsidian', project_id: 7001});
   assert.deepEqual(mismatchedSearch.results, []);
+});
+
+test('synthetic fixture can reproduce a Markdown transport failure without returning content', {timeout: 15000}, async t => {
+  const port = await unusedLoopbackPort();
+  const base = `http://127.0.0.1:${port}`;
+  const child = spawn(process.execPath, [fixtureServer, String(port), '--markdown-network-error'], {cwd: root, stdio: ['ignore', 'pipe', 'pipe']});
+  let startupOutput = '', startupError = '';
+  child.stdout.setEncoding('utf8').on('data', chunk => { startupOutput += chunk; });
+  child.stderr.setEncoding('utf8').on('data', chunk => { startupError += chunk; });
+  t.after(async () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+    if (child.exitCode === null && child.signalCode === null) await Promise.race([once(child, 'exit'), new Promise(resolve => setTimeout(resolve, 2000))]);
+  });
+
+  let ready = false;
+  for (let attempt = 0; attempt < 80; attempt++) {
+    if (child.exitCode !== null) break;
+    try {
+      const response = await fetch(`${base}/api/health`);
+      if (response.ok && (await response.json()).fixture === true) { ready = true; break; }
+    } catch { /* The local process may need a short moment to bind its loopback port. */ }
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  assert.ok(ready, `fixture server did not start: ${startupOutput} ${startupError}`);
+  await assert.rejects(
+    fetch(`${base}/api/doc/content`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({document_id: 7101, max_bytes: 65_536})}),
+    error => error instanceof TypeError && /fetch failed/i.test(error.message),
+  );
 });

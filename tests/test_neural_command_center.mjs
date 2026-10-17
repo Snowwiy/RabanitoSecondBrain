@@ -8,9 +8,9 @@ const source = fs.readFileSync(new URL('../web/knowledge.js', import.meta.url), 
 const stubs = `
 const createRequestGate = () => { let n=0; return {begin:()=>++n,current:id=>id===n}; };
 const requestJson = async () => ({});
-const safeReference = value => value;
+const safeReference = value => { try { const url = new URL(value); return ['https:','http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null; } catch { return null; } };
 `;
-const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, openAuthorizedSource, groupCommandNodes, explicitAdjacency, detectGraphCommunities};').toString('base64')}`);
+const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, openAuthorizedSource, groupCommandNodes, explicitAdjacency, detectGraphCommunities, parseSafeMarkdown};').toString('base64')}`);
 const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 
 test('normalization keeps only real graph endpoints and preserves suggested relation state', () => {
@@ -24,6 +24,29 @@ test('normalization keeps only real graph endpoints and preserves suggested rela
   assert.equal(graph.edges[0].relation_type, 'wikilink');
   assert.equal(graph.nodes[2].title, '<script>dato</script>');
   assert.equal(graph.totalMatches, 3);
+});
+
+test('safe Markdown parser covers common blocks while treating HTML and unsafe paths as text', () => {
+  const markdown = '# Architecture\n\nA **bold** note with `inline code`, <img src=x onerror=alert(1)> and [external](https://example.com/source).\n\n- first item\n- second item\n\n| Field | Value |\n| --- | --- |\n| Status | Ready |\n\n```js\nconst answer = 42;\n```\n\n> quoted source\n\n[unsafe](javascript:alert(1)) [unresolved](../../private.md) [[notes/allowed.md|allowed note]]';
+  const tree = ui.parseSafeMarkdown(markdown, [{target_document_id: 7102, title: 'Allowed note', target_raw: 'notes/allowed.md', relative_path: 'notes/allowed.md'}]);
+  assert.deepEqual(tree.map(block => block.type), ['heading', 'paragraph', 'list', 'table', 'codeBlock', 'blockquote', 'paragraph']);
+  const paragraphText = JSON.stringify(tree[1]);
+  assert.match(paragraphText, /<img src=x onerror=alert\(1\)>/);
+  assert.match(paragraphText, /https:\/\/example\.com\/source/);
+  const links = JSON.stringify(tree.at(-1));
+  assert.doesNotMatch(links, /javascript:/i);
+  assert.doesNotMatch(links, /\.\.\/\.\.\/private\.md/);
+  assert.match(links, /"type":"document","documentId":7102/);
+  assert.match(JSON.stringify(tree[3]), /"type":"table"/);
+  assert.equal(tree[4].text, 'const answer = 42;');
+  assert.throws(() => ui.parseSafeMarkdown('x'.repeat(65_537)), /65,536/);
+});
+
+test('safe Markdown parser refuses unresolved and invalid document references', () => {
+  const blocks = ui.parseSafeMarkdown('[[Private note]] [relative](note.md)', [{target_document_id: -1, title: 'Private note', target_raw: 'Private note'}]);
+  const output = JSON.stringify(blocks);
+  assert.doesNotMatch(output, /"type":"document"/);
+  assert.doesNotMatch(output, /target_document_id/);
 });
 
 test('explicit-link communities separate dense clusters, ignore suggestions and stay deterministic', () => {
@@ -115,6 +138,19 @@ test('neural command center renders imported text through textContent, not HTML 
   assert.doesNotMatch(source, /\.innerHTML\s*=/);
   assert.match(source, /\/api\/context/);
   assert.match(source, /max_chars: 2400/);
+});
+
+test('Markdown reader is user-triggered, bounded, stale-safe and announces status without a live full body', () => {
+  assert.match(html, /id="ncReadMarkdown" disabled>Leer documento completo/);
+  assert.match(html, /id="ncMarkdownSearch" role="search" novalidate/);
+  assert.match(source, /byId\('ncReadMarkdown'\)\.addEventListener\('click',\s*\(\) => void readMarkdown\(\)\)/);
+  assert.match(source, /api\('\/api\/doc\/content', \{document_id: documentId, max_bytes: MARKDOWN_MAX_CHARACTERS\}\)/);
+  assert.match(source, /markdownGate\.current\(gate\)/);
+  assert.match(source, /actualBytes !== payload\.bytes_returned/);
+  assert.match(source, /reader\.hidden = true; byId\('ncMarkdownContent'\)\.replaceChildren\(\)/);
+  assert.match(html, /id="ncInspectorAnnouncement" class="nc-sr-only" role="status" aria-live="polite" aria-atomic="true"/);
+  assert.doesNotMatch(html, /<aside class="nc-inspector"[^>]*aria-live=/);
+  assert.doesNotMatch(source, /\.innerHTML\s*=/);
 });
 
 test('search result cards stack safely and wrap long citations in the narrow explorer', () => {

@@ -64,6 +64,123 @@ export function safeRelativePath(value) {
   return path;
 }
 
+const MARKDOWN_MAX_CHARACTERS = 65_536;
+const MARKDOWN_MAX_BLOCKS = 2_048;
+const MARKDOWN_MAX_LINES = 4_096;
+const normalizeReference = value => String(value ?? '').normalize('NFC').trim().replace(/\\/g, '/').replace(/^\.\//, '').toLocaleLowerCase('en');
+
+function resolveMarkdownReference(target, references) {
+  const lookup = normalizeReference(String(target ?? '').split('#', 1)[0]);
+  if (!lookup || lookup.length > 1000) return null;
+  for (const reference of references) {
+    const id = Number(reference?.target_document_id ?? reference?.document_id);
+    if (!Number.isSafeInteger(id) || id <= 0) continue;
+    const candidates = [reference.target_raw, reference.title, safeRelativePath(reference.relative_path)].filter(value => typeof value === 'string' && value.length > 0 && value.length <= 1000).map(normalizeReference);
+    if (candidates.includes(lookup)) return {documentId: id, title: String(reference.title || reference.target_raw || `Documento ${id}`).slice(0, 500)};
+  }
+  return null;
+}
+
+function parseMarkdownInline(value, references, depth = 0) {
+  const text = String(value ?? '');
+  const tokens = [];
+  const addText = part => {
+    if (!part) return;
+    const previous = tokens.at(-1);
+    if (previous?.type === 'text') previous.text += part;
+    else tokens.push({type: 'text', text: part});
+  };
+  let index = 0;
+  while (index < text.length) {
+    if (text[index] === '\\' && index + 1 < text.length) { addText(text[index + 1]); index += 2; continue; }
+    if (text.startsWith('[[', index)) {
+      const close = text.indexOf(']]', index + 2);
+      if (close !== -1 && close - index <= 1000) {
+        const [target, ...alias] = text.slice(index + 2, close).split('|');
+        const resolved = resolveMarkdownReference(target, references);
+        if (resolved) tokens.push({type: 'document', ...resolved, label: String(alias.join('|') || resolved.title).slice(0, 500)});
+        else addText(String(alias.join('|') || target));
+        index = close + 2; continue;
+      }
+    }
+    if (text[index] === '`') {
+      let run = 1; while (text[index + run] === '`') run += 1;
+      const fence = '`'.repeat(run), close = text.indexOf(fence, index + run);
+      if (close !== -1) { tokens.push({type: 'code', text: text.slice(index + run, close).replace(/\n/g, ' ')}); index = close + run; continue; }
+    }
+    const link = text.slice(index).match(/^\[([^\]]{1,500})\]\(([^)\s]{1,1000})(?:\s+"[^"]{0,200}")?\)/);
+    if (link) {
+      const destination = link[2], resolved = resolveMarkdownReference(destination, references), href = safeReference(destination);
+      if (resolved) tokens.push({type: 'document', ...resolved, label: link[1].slice(0, 500)});
+      else if (href) tokens.push({type: 'link', href, children: depth < 4 ? parseMarkdownInline(link[1], references, depth + 1) : [{type: 'text', text: link[1]}]});
+      else addText(link[1]);
+      index += link[0].length; continue;
+    }
+    if (depth < 4) {
+      const marker = text.startsWith('**', index) ? '**' : text.startsWith('__', index) ? '__' : text[index] === '*' ? '*' : text[index] === '_' ? '_' : '';
+      if (marker) {
+        const close = text.indexOf(marker, index + marker.length);
+        if (close > index + marker.length && !/\s/.test(text[index + marker.length])) {
+          const children = parseMarkdownInline(text.slice(index + marker.length, close), references, depth + 1);
+          tokens.push({type: marker.length === 2 ? 'strong' : 'emphasis', children}); index = close + marker.length; continue;
+        }
+      }
+    }
+    addText(text[index]); index += 1;
+  }
+  return tokens;
+}
+
+// Parse only a bounded Markdown subset. The returned tree contains no HTML nodes or caller paths.
+export function parseSafeMarkdown(markdown, references = []) {
+  if (typeof markdown !== 'string' || markdown.length > MARKDOWN_MAX_CHARACTERS) throw new Error('El Markdown excede el límite seguro de 65,536 caracteres.');
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n').slice(0, MARKDOWN_MAX_LINES);
+  const refs = Array.isArray(references) ? references.slice(0, 512) : [];
+  const blocks = [];
+  const inline = text => parseMarkdownInline(text, refs);
+  const isTableSeparator = value => /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(value);
+  const isList = value => /^\s{0,3}(?:[-+*]|\d+[.)])\s+/.test(value);
+  const startsBlock = value => /^\s{0,3}(?:#{1,6}\s|```+|~~~+|>\s?|(?:-{3,}|\*{3,}|_{3,})\s*$)/.test(value) || isList(value);
+  const cells = value => value.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').slice(0, 20).map(cell => cell.trim());
+  let index = 0;
+  while (index < lines.length && blocks.length < MARKDOWN_MAX_BLOCKS) {
+    const line = lines[index];
+    if (!line.trim()) { index += 1; continue; }
+    const fence = line.match(/^\s{0,3}(`{3,}|~{3,})\s*([\w.+-]{0,40})[^\n]*$/);
+    if (fence) {
+      const content = []; index += 1;
+      while (index < lines.length && !new RegExp(`^\\s{0,3}${fence[1][0]}{${fence[1].length},}\\s*$`).test(lines[index])) { if (content.length < MARKDOWN_MAX_LINES) content.push(lines[index]); index += 1; }
+      if (index < lines.length) index += 1;
+      blocks.push({type: 'codeBlock', language: fence[2], text: content.join('\n')}); continue;
+    }
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+    if (heading) { blocks.push({type: 'heading', level: heading[1].length, children: inline(heading[2])}); index += 1; continue; }
+    if (/^\s{0,3}(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/.test(line)) { blocks.push({type: 'rule'}); index += 1; continue; }
+    if (/^\s*>/.test(line)) {
+      const quote = [];
+      while (index < lines.length && /^\s*>/.test(lines[index])) quote.push(lines[index++].replace(/^\s*>\s?/, ''));
+      blocks.push({type: 'blockquote', children: inline(quote.join(' '))}); continue;
+    }
+    if (isList(line)) {
+      const ordered = /^\s{0,3}\d+[.)]/.test(line), items = [];
+      while (index < lines.length && isList(lines[index]) && /^\s{0,3}\d+[.)]/.test(lines[index]) === ordered && items.length < 200) {
+        items.push(inline(lines[index].replace(/^\s{0,3}(?:[-+*]|\d+[.)])\s+/, ''))); index += 1;
+      }
+      blocks.push({type: 'list', ordered, items}); continue;
+    }
+    if (line.includes('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1])) {
+      const headers = cells(line), rows = []; index += 2;
+      while (index < lines.length && lines[index].includes('|') && rows.length < 200) { rows.push(cells(lines[index]).slice(0, headers.length)); index += 1; }
+      blocks.push({type: 'table', headers: headers.map(inline), rows: rows.map(row => Array.from({length: headers.length}, (_, cellIndex) => inline(row[cellIndex] || '')))}); continue;
+    }
+    const paragraph = [line.trim()]; index += 1;
+    while (index < lines.length && lines[index].trim() && !startsBlock(lines[index]) && !(lines[index].includes('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1]))) paragraph.push(lines[index++].trim());
+    blocks.push({type: 'paragraph', children: inline(paragraph.join(' '))});
+  }
+  if (lines.length >= MARKDOWN_MAX_LINES || blocks.length >= MARKDOWN_MAX_BLOCKS) blocks.push({type: 'notice', text: 'Se alcanzó el límite de elementos mostrados.'});
+  return blocks;
+}
+
 export async function openAuthorizedSource(documentId, request, setStatus) {
   const failure = 'No se pudo confirmar la apertura de la fuente autorizada. Reintenta desde el panel.';
   try {
@@ -190,7 +307,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
   if (!root || root.dataset.initialized === 'true') return null;
   root.dataset.initialized = 'true';
   const api = (path, body) => requestJson(path, body, fetcher);
-  const graphGate = createRequestGate(), searchGate = createRequestGate(), inspectGate = createRequestGate();
+  const graphGate = createRequestGate(), searchGate = createRequestGate(), inspectGate = createRequestGate(), markdownGate = createRequestGate();
   const state = {graph: normalizeCommandGraph({}), projects: [], selected: null, selectedDocument: null, componentFocus: null, groupFocus: null, query: '', offset: 0, nodeDirectoryPage: 0, panX: 0, panY: 0, zoom: 1, dragging: false, labels: true, reducedMotion: false};
   const NODE_DIRECTORY_PAGE_SIZE = 25;
   let derivedGraph = null, adjacencyCache = null, componentCache = null, communityCache = null;
@@ -203,6 +320,147 @@ export function startCommandCenter(doc, fetcher = fetch) {
   };
   const setStatus = (text, tone = '') => { const status = byId('ncStatus'); status.textContent = text; status.dataset.tone = tone; };
   const safeCount = value => Number.isFinite(Number(value)) ? Number(value).toLocaleString('es-MX') : '—';
+  let markdownMatchIndex = 0;
+
+  function renderInline(parent, tokens) {
+    for (const token of tokens || []) {
+      if (token.type === 'text') { parent.append(doc.createTextNode(token.text)); continue; }
+      if (token.type === 'code' || token.type === 'emphasis' || token.type === 'strong') {
+        const element = doc.createElement(token.type === 'emphasis' ? 'em' : token.type === 'strong' ? 'strong' : 'code');
+        if (token.type === 'code') element.textContent = token.text;
+        else renderInline(element, token.children);
+        parent.append(element); continue;
+      }
+      if (token.type === 'link') {
+        const href = safeReference(token.href);
+        if (!href) { renderInline(parent, token.children); continue; }
+        const anchor = doc.createElement('a'); anchor.href = href; anchor.target = '_blank'; anchor.rel = 'noopener noreferrer'; renderInline(anchor, token.children); parent.append(anchor); continue;
+      }
+      if (token.type === 'document') {
+        const id = Number(token.documentId);
+        if (!Number.isSafeInteger(id) || id <= 0) { parent.append(doc.createTextNode(token.label || token.title || 'Referencia')); continue; }
+        const button = doc.createElement('button'); button.type = 'button'; button.className = 'nc-markdown-document-link'; button.textContent = token.label || token.title || `Documento ${id}`;
+        button.setAttribute('aria-label', `Abrir documento relacionado: ${button.textContent}`); button.addEventListener('click', () => dispatchSelection(id)); parent.append(button);
+      }
+    }
+  }
+
+  function renderMarkdownContent(blocks) {
+    const fragment = doc.createDocumentFragment();
+    for (const block of blocks) {
+      let element;
+      if (block.type === 'heading') { element = doc.createElement(`h${block.level}`); renderInline(element, block.children); }
+      else if (block.type === 'paragraph') { element = doc.createElement('p'); renderInline(element, block.children); }
+      else if (block.type === 'blockquote') { element = doc.createElement('blockquote'); renderInline(element, block.children); }
+      else if (block.type === 'rule') element = doc.createElement('hr');
+      else if (block.type === 'notice') { element = doc.createElement('p'); element.className = 'nc-pending'; element.textContent = block.text; }
+      else if (block.type === 'codeBlock') { element = doc.createElement('pre'); const code = doc.createElement('code'); if (/^[\w.+-]{1,40}$/.test(block.language || '')) code.dataset.language = block.language; code.textContent = block.text; element.append(code); }
+      else if (block.type === 'list') {
+        element = doc.createElement(block.ordered ? 'ol' : 'ul');
+        for (const children of block.items) { const item = doc.createElement('li'); renderInline(item, children); element.append(item); }
+      } else if (block.type === 'table') {
+        element = doc.createElement('table'); const head = doc.createElement('thead'), headRow = doc.createElement('tr');
+        for (const children of block.headers) { const cell = doc.createElement('th'); cell.scope = 'col'; renderInline(cell, children); headRow.append(cell); }
+        head.append(headRow); const body = doc.createElement('tbody');
+        for (const row of block.rows) { const rowElement = doc.createElement('tr'); for (const children of row) { const cell = doc.createElement('td'); renderInline(cell, children); rowElement.append(cell); } body.append(rowElement); }
+        element.append(head, body);
+      } else continue;
+      fragment.append(element);
+    }
+    return fragment;
+  }
+
+  function clearMarkdownHighlights() {
+    const content = byId('ncMarkdownContent');
+    for (const mark of content.querySelectorAll('mark[data-reader-match]')) mark.replaceWith(doc.createTextNode(mark.textContent || ''));
+    content.normalize();
+  }
+
+  function focusMarkdownMatch(index) {
+    const matches = [...byId('ncMarkdownContent').querySelectorAll('mark[data-reader-match]')];
+    const previous = byId('ncMarkdownPrev'), next = byId('ncMarkdownNext'), status = byId('ncMarkdownSearchStatus');
+    previous.disabled = next.disabled = matches.length <= 1;
+    if (!matches.length) { status.textContent = '0 coincidencias en este documento.'; return; }
+    markdownMatchIndex = (index + matches.length) % matches.length;
+    matches.forEach((mark, current) => { mark.setAttribute('aria-current', String(current === markdownMatchIndex)); if (current === markdownMatchIndex) mark.tabIndex = -1; else mark.removeAttribute('tabindex'); });
+    const active = matches[markdownMatchIndex]; active.focus?.({preventScroll: true}); active.scrollIntoView?.({block: 'nearest'});
+    status.textContent = `Coincidencia ${markdownMatchIndex + 1} de ${matches.length}.`;
+  }
+
+  function searchMarkdown() {
+    clearMarkdownHighlights();
+    const query = String(byId('ncMarkdownQuery').value || '').slice(0, 100).trim();
+    if (!query) { markdownMatchIndex = 0; byId('ncMarkdownPrev').disabled = byId('ncMarkdownNext').disabled = true; byId('ncMarkdownSearchStatus').textContent = 'Escribe un término para buscar en el documento actual.'; return; }
+    const content = byId('ncMarkdownContent'), walker = doc.createTreeWalker(content, doc.defaultView?.NodeFilter?.SHOW_TEXT || 4), textNodes = [];
+    while (walker.nextNode()) if (walker.currentNode.nodeValue) textNodes.push(walker.currentNode);
+    const needle = query.toLocaleLowerCase('es-MX');
+    for (const textNode of textNodes) {
+      const value = textNode.nodeValue || '', lower = value.toLocaleLowerCase('es-MX'), fragment = doc.createDocumentFragment();
+      let offset = 0, found = false;
+      while (offset < value.length) {
+        const match = lower.indexOf(needle, offset);
+        if (match < 0) { fragment.append(doc.createTextNode(value.slice(offset))); break; }
+        found = true;
+        if (match > offset) fragment.append(doc.createTextNode(value.slice(offset, match)));
+        const mark = doc.createElement('mark'); mark.dataset.readerMatch = 'true'; mark.textContent = value.slice(match, match + query.length); fragment.append(mark); offset = match + query.length;
+      }
+      if (found) textNode.replaceWith(fragment);
+    }
+    markdownMatchIndex = 0;
+    focusMarkdownMatch(0);
+  }
+
+  function renderMarkdownReferences(references) {
+    const list = byId('ncMarkdownReferences'), fragment = doc.createDocumentFragment();
+    for (const reference of (Array.isArray(references) ? references : []).slice(0, 100)) {
+      const id = Number(reference?.target_document_id ?? reference?.document_id), title = String(reference?.title || reference?.target_raw || 'Referencia sin título').slice(0, 500);
+      const item = doc.createElement('li');
+      if (Number.isSafeInteger(id) && id > 0) {
+        const button = doc.createElement('button'); button.type = 'button'; button.textContent = title; button.setAttribute('aria-label', `Abrir referencia: ${title}`); button.addEventListener('click', () => dispatchSelection(id)); item.append(button);
+      } else item.textContent = title;
+      const path = safeRelativePath(reference?.relative_path);
+      if (path) { const citation = doc.createElement('span'); citation.className = 'nc-inspector-meta'; citation.textContent = ` · ${path}`; item.append(citation); }
+      const status = String(reference?.status || '').slice(0, 80);
+      if (status) { const state = doc.createElement('span'); state.className = 'nc-inspector-meta'; state.textContent = ` · ${status}`; item.append(state); }
+      fragment.append(item);
+    }
+    list.replaceChildren(fragment.childNodes.length ? fragment : make('li', 'La API no devolvió referencias reconocidas para este documento.', 'meta'));
+  }
+
+  function resetMarkdownReader(message = 'Selecciona un documento para consultar el lector completo.') {
+    markdownGate.begin(); markdownMatchIndex = 0;
+    byId('ncReadMarkdown').disabled = !state.selectedDocument;
+    byId('ncMarkdownStatus').textContent = message;
+    byId('ncMarkdownReader').hidden = true; byId('ncMarkdownSearch').hidden = true;
+    byId('ncMarkdownQuery').value = ''; byId('ncMarkdownContent').replaceChildren(); byId('ncMarkdownReferences').replaceChildren();
+    byId('ncMarkdownSearchStatus').textContent = '';
+  }
+
+  async function readMarkdown() {
+    const documentId = Number(state.selected), gate = markdownGate.begin();
+    if (!Number.isSafeInteger(documentId) || documentId <= 0 || !state.selectedDocument) return;
+    const reader = byId('ncMarkdownReader'), button = byId('ncReadMarkdown');
+    reader.hidden = false; button.disabled = true; byId('ncMarkdownStatus').textContent = 'Solicitando Markdown completo a la API local…';
+    byId('ncMarkdownSearch').hidden = true; byId('ncMarkdownContent').replaceChildren(); byId('ncMarkdownReferences').replaceChildren();
+    try {
+      const payload = await api('/api/doc/content', {document_id: documentId, max_bytes: MARKDOWN_MAX_CHARACTERS});
+      if (!markdownGate.current(gate) || String(state.selected) !== String(documentId)) return;
+      const content = payload?.content_markdown;
+      if (!Number.isSafeInteger(payload?.document_id) || payload.document_id !== documentId || typeof content !== 'string' || !Array.isArray(payload?.references) || payload.references.length > 512 || typeof payload?.truncated !== 'boolean' || !Number.isSafeInteger(payload?.bytes_returned)) throw new Error('La respuesta del lector no cumple el contrato seguro documentado.');
+      const actualBytes = new TextEncoder().encode(content).byteLength;
+      if (actualBytes > MARKDOWN_MAX_CHARACTERS || payload.bytes_returned > MARKDOWN_MAX_CHARACTERS) throw new Error('La respuesta supera el límite de 65,536 bytes.');
+      if (actualBytes !== payload.bytes_returned) throw new Error('La longitud UTF-8 de la respuesta no coincide con bytes_returned.');
+      const tree = parseSafeMarkdown(content, payload.references);
+      byId('ncMarkdownContent').replaceChildren(renderMarkdownContent(tree)); renderMarkdownReferences(payload.references);
+      byId('ncMarkdownSearch').hidden = false; byId('ncMarkdownQuery').value = ''; byId('ncMarkdownSearchStatus').textContent = 'Escribe un término para buscar en el documento actual.';
+      byId('ncMarkdownStatus').textContent = payload.truncated ? `Vista parcial: ${Number(payload.bytes_returned).toLocaleString('es-MX')} bytes. El servidor indicó que el documento continúa.` : `Markdown del documento ${documentId} cargado · ${Number(payload.bytes_returned).toLocaleString('es-MX')} bytes.`;
+    } catch (error) {
+      if (!markdownGate.current(gate) || String(state.selected) !== String(documentId)) return;
+      const message = String(error.message || 'error de API');
+      const status = message.includes('HTTP 404') ? 'El servidor no ofrece todavía el endpoint autorizado de Markdown. Puedes seguir usando metadatos, fragmentos citados y la fuente autorizada.' : message.includes('HTTP 413') ? 'El servidor rechazó la lectura por tamaño; el límite del lector es 65,536 bytes.' : `No se pudo leer el Markdown: ${message.slice(0, 180)}`;
+      byId('ncMarkdownStatus').textContent = status; reader.hidden = true; byId('ncMarkdownContent').replaceChildren(); byId('ncMarkdownReferences').replaceChildren();
+    } finally { if (markdownGate.current(gate) && String(state.selected) === String(documentId)) button.disabled = false; }
+  }
 
   function updateAccessibleNodeSelection() {
     for (const button of byId('ncAccessibleNodes').querySelectorAll('[data-node-id]')) {
@@ -625,11 +883,13 @@ export function startCommandCenter(doc, fetcher = fetch) {
 
   function renderInspectorEmpty() {
     byId('ncInspectorType').textContent = 'Sin selección';
+    byId('ncInspectorAnnouncement').textContent = 'No hay documento seleccionado.';
     byId('ncInspectorBody').replaceChildren(make('p', 'Selecciona un nodo, resultado de búsqueda o elemento de una comunidad. Se mostrarán metadatos locales y fragmentos citados.', 'nc-inspector-intro'));
     byId('ncFragments').textContent = 'Aún no hay documento seleccionado.';
     byId('ncNeighbors').replaceChildren(make('span', 'Selecciona una entidad para explorar vecinos.', 'meta'));
     byId('ncOpenOriginal').disabled = true; byId('ncGetContext').disabled = true;
     byId('ncSourceRef').textContent = 'No se expone la ruta absoluta de la fuente.';
+    state.selectedDocument = null; resetMarkdownReader();
   }
 
   function dispatchSelection(id, node = null) {
@@ -642,7 +902,9 @@ export function startCommandCenter(doc, fetcher = fetch) {
     state.selected = String(documentId);
     updateAccessibleNodeSelection();
     const generation = inspectGate.begin();
-    byId('ncInspectorType').textContent = 'Documento';
+    state.selectedDocument = null; resetMarkdownReader('Selecciona un documento para consultar el lector completo.');
+    byId('ncInspectorType').textContent = `Documento ${documentId}`;
+    byId('ncInspectorAnnouncement').textContent = `Cargando metadatos del documento ${documentId}.`;
     byId('ncInspectorBody').replaceChildren(make('p', 'Leyendo metadatos del índice local…', 'nc-inspector-intro'));
     byId('ncFragments').replaceChildren(make('span', 'Recuperando fragmentos citados…', 'meta'));
     byId('ncNeighbors').replaceChildren(make('span', 'Cargando relaciones disponibles…', 'meta'));
@@ -651,6 +913,8 @@ export function startCommandCenter(doc, fetcher = fetch) {
       const documentData = await api(`/api/doc/${documentId}`);
       if (!inspectGate.current(generation)) return;
       state.selectedDocument = documentData;
+      byId('ncReadMarkdown').disabled = false;
+      byId('ncInspectorAnnouncement').textContent = `Metadatos del documento ${documentId} cargados. Los fragmentos citados y relaciones están disponibles en el inspector.`;
       const body = byId('ncInspectorBody'), tags = Array.isArray(documentData.tags) ? documentData.tags : [];
       const title = make('h3', documentData.title || 'Documento sin título');
       const meta = make('p', [documentData.project_name, documentData.category, documentData.source_kind, documentData.mtime_iso].filter(Boolean).join(' · ') || 'Metadatos parciales', 'nc-inspector-meta');
@@ -660,7 +924,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
       if (tags.length) body.append(tagList);
       const frontmatter = documentData.frontmatter && typeof documentData.frontmatter === 'object' ? Object.keys(documentData.frontmatter).slice(0, 12) : [];
       if (frontmatter.length) body.append(make('p', `Propiedades YAML: ${frontmatter.join(' · ')}`, 'nc-inspector-meta'));
-      body.append(make('p', 'La API de esta rama entrega metadatos y fragmentos de recuperación, no el Markdown íntegro. El contenido completo se abre únicamente en la fuente original autorizada.', 'nc-inspector-intro'));
+      body.append(make('p', 'Los fragmentos siguientes proceden de recuperación citada. La lectura completa usa un endpoint ID-only del servidor cuando está disponible; abrir la fuente sigue pasando por la autorización local.', 'nc-inspector-intro'));
       byId('ncSourceRef').textContent = `${documentData.source_kind || 'fuente local'} · ${documentData.relative_path || 'referencia relativa no disponible'}${documentData.mtime_iso ? ` · actualizado ${documentData.mtime_iso}` : ''}`;
       await loadFragments(documentData, generation);
       await renderNeighbors(documentData, generation);
@@ -669,6 +933,8 @@ export function startCommandCenter(doc, fetcher = fetch) {
         byId('ncInspectorBody').replaceChildren(make('p', `No se pudo cargar el documento: ${String(error.message || 'error de API').slice(0, 180)}`, 'error'));
         byId('ncFragments').textContent = 'No hay fragmentos disponibles.';
         byId('ncNeighbors').textContent = 'No hay relaciones disponibles.';
+        byId('ncReadMarkdown').disabled = true;
+        byId('ncInspectorAnnouncement').textContent = `No se pudieron cargar los metadatos del documento ${documentId}.`;
       }
     }
   }
@@ -972,6 +1238,11 @@ export function startCommandCenter(doc, fetcher = fetch) {
       finally { byId('ncOpenOriginal').disabled = false; }
     });
     byId('ncGetContext').addEventListener('click', () => void retrieveContext());
+    byId('ncReadMarkdown').addEventListener('click', () => void readMarkdown());
+    byId('ncMarkdownSearch').addEventListener('submit', event => { event.preventDefault(); searchMarkdown(); });
+    byId('ncMarkdownQuery').addEventListener('input', searchMarkdown);
+    byId('ncMarkdownPrev').addEventListener('click', () => focusMarkdownMatch(markdownMatchIndex - 1));
+    byId('ncMarkdownNext').addEventListener('click', () => focusMarkdownMatch(markdownMatchIndex + 1));
     for (const button of root.querySelectorAll('[data-module]')) button.addEventListener('click', () => openModule(button.dataset.module));
     doc.addEventListener('rabanito-command-selection', event => { const id = event.detail?.id ?? event.detail?.node?.document_id; if (id != null) void inspect(id); });
     bindOrbitCanvas(); bindAccessibleNodeDirectory(); bindPanelResizers();

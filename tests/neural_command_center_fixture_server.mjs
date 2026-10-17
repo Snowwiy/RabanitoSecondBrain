@@ -9,6 +9,8 @@ const web = path.join(root, 'web');
 const port = Number(process.argv[2] || 8877);
 const fixture = true;
 const largeFixture = process.argv.includes('--large');
+const markdownUnavailable = process.argv.includes('--no-markdown');
+const markdownNetworkError = process.argv.includes('--markdown-network-error');
 const project = {project_id: 7001, name: 'Fixture Core', status: 'active', relative_path: 'fixture/core', technologies: ['Python', 'SQLite']};
 const fixtureSources = [
   {source_id: 7002, kind: 'obsidian', enabled: true, managed: false, name: 'Fixture Obsidian'},
@@ -81,6 +83,18 @@ const server = http.createServer(async (request, response) => {
     let body = '';
     for await (const chunk of request) { body += chunk; if (body.length > 20_000) return json(response, {error: 'Fixture request too large'}, 413); }
     let payload = {}; try { payload = body ? JSON.parse(body) : {}; } catch { return json(response, {error: 'Invalid JSON'}, 400); }
+    if (url.pathname === '/api/doc/content') {
+      if (markdownUnavailable) return json(response, {error: 'Markdown content endpoint not available in this fixture mode.'}, 404);
+      if (markdownNetworkError) { response.destroy(); request.socket.destroy(); return; }
+      const documentId = Number(payload.document_id), maximum = Number(payload.max_bytes);
+      if (!Number.isSafeInteger(documentId) || documentId <= 0 || !Number.isSafeInteger(maximum) || maximum < 1 || maximum > 65_536) return json(response, {error: 'Fixture reader accepts a positive document ID and max_bytes up to 65536.'}, 400);
+      const document = documents.find(item => item.document_id === documentId);
+      if (!document) return json(response, {error: 'Synthetic document not found.'}, 404);
+      const markdown = '# Fixture — lector Markdown seguro\n\nEste cuerpo es contenido sintético exclusivo de QA para **validar el adaptador visual**.\n\n- encabezados y listas\n- referencias con autorización por ID\n\n| Campo | Valor |\n| --- | --- |\n| Fuente | Solo fixture |\n\n```js\nconst fixture = true;\n```\n\nReferencia interna: [[Research/Indexación.md|abrir nota relacionada]]. Fuente externa: [referencia de prueba](https://example.org/fixture-source).\n\nHTML inerte como texto: <img src=x onerror="alert(1)">';
+      const references = [{target_document_id: 7102, title: documents.find(item => item.document_id === 7102)?.title || 'Fixture Indexación', target_raw: 'Research/Indexación.md', relative_path: 'Research/Indexación.md', status: 'resolved'}];
+      const bytes = Buffer.from(markdown, 'utf8'), clipped = bytes.subarray(0, maximum), content = clipped.toString('utf8');
+      return json(response, {fixture, document_id: documentId, content_markdown: content, bytes_returned: Buffer.byteLength(content, 'utf8'), truncated: clipped.length < bytes.length, references: documentId === 7101 ? references : []});
+    }
     if (url.pathname === '/api/graph') {
       const requestedLimit = Math.min(1000, Math.max(1, Number(payload.limit) || 180));
       const query = String(payload.q || '').trim().toLocaleLowerCase();
