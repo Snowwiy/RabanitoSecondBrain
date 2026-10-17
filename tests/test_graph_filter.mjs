@@ -190,6 +190,8 @@ test("authorized source opening announces success and failures inline without na
   );
   await createOpenDoc(async () => ({ok: false, json: async () => ({error: "internal detail"})}))(7);
   assert.equal(status.textContent, "No se pudo abrir la fuente autorizada. Reintenta desde el panel.");
+  await createOpenDoc(async () => ({ok: true, json: async () => ({opened: false, fixture: true})}))(7);
+  assert.equal(status.textContent, "No se pudo abrir la fuente autorizada. Reintenta desde el panel.");
   await createOpenDoc(async () => { throw new Error("connection detail"); })(7);
   assert.equal(status.textContent, "No se pudo conectar con el servidor local para abrir la fuente. Reintenta desde el panel.");
   await createOpenDoc(async () => ({ok: true, json: async () => ({opened: true})}))(7);

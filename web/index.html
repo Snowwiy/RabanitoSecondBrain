@@ -460,7 +460,7 @@
       const status=$('operationStatus');status.textContent='Abriendo la fuente autorizada…';
       try{
         const response=await fetch('/api/open/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),data=await response.json();
-        if(!response.ok||data.error){status.textContent='No se pudo abrir la fuente autorizada. Reintenta desde el panel.';return;}
+        if(!response.ok||data.error||data.opened!==true){status.textContent='No se pudo abrir la fuente autorizada. Reintenta desde el panel.';return;}
         status.textContent='Se solicitó abrir el documento mediante la ruta autorizada.';
       }catch(_error){status.textContent='No se pudo conectar con el servidor local para abrir la fuente. Reintenta desde el panel.';}
     }

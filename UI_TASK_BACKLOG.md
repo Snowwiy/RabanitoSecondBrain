@@ -9,7 +9,7 @@
 - [x] Keep suggested relations distinct and avoid invented hierarchy/community claims.
 - [x] Add local synthetic fixture server and pure-function/XSS-boundary tests.
 - [x] Document current API boundary and integration limitations.
-- [x] Run 63 Node UI tests and 290 Python tests (1 skipped); `git diff --check` passes.
+- [x] Run 64 Node UI tests and 290 Python tests (1 skipped); `git diff --check` passes.
 - [x] Final synthetic browser smoke pass: search/selection/inspector, four view tabs, legacy graph mount, panel collapse/restore and preference disclosure.
 - [x] Fix narrow search-card horizontal overflow and add a regression check.
 - [x] Add an accessible clear action to global search; invalidate pending responses, reset the view, and return focus to the query field.
@@ -24,6 +24,8 @@
 - [x] Cache the legacy Galaxy node/adjacency index by graph identity; verify cache reuse and invalidation when a new graph arrives.
 - [x] Correct the synthetic fixture's parsing of `"0"`/`"1"` suggestion flags so the default graph excludes suggestions like production.
 - [x] Replace the legacy authorized-source `alert()` with persistent live-region feedback for pending, success, HTTP failure and connection failure.
+- [x] Require both command-center and legacy source-open actions to receive `opened: true` before announcing success; cover HTTP 200 `opened: false` responses.
+- [x] Check responsive geometry at exact 1920×1080, 2560×1440 and 380×787; no horizontal overflow was found.
 
 ## Coverage audit and remaining work
 
@@ -35,17 +37,17 @@ The requested original Neural Command Center master prompt is not present in the
 | Hex Knowledge | Groups by indexed category/source/project or explicit-edge connected components; group selection focuses Orbit. | Node grouping tests and synthetic-browser group selection; this phase verified the active group is exposed as pressed in the accessibility tree. | Component groups are document-graph connectivity, not typed entities or semantic communities. |
 | Knowledge Galaxy 3D | Existing Canvas 2D renderer with 3D projection/rotation and filters is moved into the central tab; graph indexes are cached per loaded graph. | Existing graph interaction tests; at 1,000 synthetic nodes, keyboard selection and community isolation rendered as expected with 999 explicit relations. | The typed cross-entity graph endpoint is absent. Renderer remains Canvas-based; WebGL was not part of the verified repository contract. |
 | Knowledge Tree | Lists documents grouped by verified project metadata and separately lists explicit graph relations (bounded to 160 rendered edges). | Grouping tests and synthetic-browser tab smoke. | It is not a source-backed architecture hierarchy; a typed graph endpoint is absent from this branch. |
-| Markdown inspector | Shows safe metadata, bounded cited retrieval fragments, explicit neighbors and an authorized source-open action with live pending/success/failure feedback. | Existing API/fixture tests, synthetic-browser inspector smoke, and regression coverage for source-open success/HTTP/connection states. | Full Markdown body cannot be read until an ID-only, bounded, authorized content endpoint exists and is reviewed. |
+| Markdown inspector | Shows safe metadata, bounded cited retrieval fragments, explicit neighbors and an authorized source-open action with live pending/success/failure feedback; success requires the API's explicit `opened: true`. | Browser QA confirmed the synthetic `opened: false` response is announced as failure; unit coverage checks `opened: true`, `opened: false`, HTTP failure and connection failure. | Full Markdown body cannot be read until an ID-only, bounded, authorized content endpoint exists and is reviewed. |
 | Personalization | Five themes; local layout, typography, density, zoom, color, labels, link appearance and reduced-motion preferences; no knowledge queries persisted. | Theme and preference browser smoke; latest phase checked both reduced-motion controls in the browser accessibility tree. | No screen-reader/forced-colors certification. |
 | Filters | Query, project, source and category API filters; Orbit depth, minimum degree, suggestions, density and coloring controls. | Existing API/UI regression suites; synthetic-browser search and minimum-degree smoke. | Not every control has a separate end-to-end browser case; real-index filter behavior awaits integration QA. |
 | Navigation | Roving tabs, keyboard/pointer node selection, arrows, Escape, search results, inspector neighbors, Tree and Hex actions, module disclosures, current-module state, keyboard and pointer splitters. | Node keyboard tests; synthetic-browser module navigation opened Projects, Coding Memory and Cyber panels and focused their headings/summaries; pointer dragging changed the Explorer's accessible width from 230 to 244. | Screen-reader certification remains open. |
-| Performance | Request cap 1,000; Orbit reuses adjacency/components/positions, and Galaxy reuses a node/adjacency index until a new graph arrives. | 63 Node tests plus synthetic-browser render/interaction smoke through 1,000 nodes across Orbit, Hex, legacy Galaxy and Tree. | No measured 1,000-node/real-index frame-time or memory profile; caches reduce repeated derivation but are not performance certification. |
+| Performance | Request cap 1,000; Orbit reuses adjacency/components/positions, and Galaxy reuses a node/adjacency index until a new graph arrives. | Node regression suite plus synthetic-browser render/interaction smoke through 1,000 nodes across Orbit, Hex, legacy Galaxy and Tree; responsive geometry checked at exact 1920×1080 and 2560×1440. | No measured 1,000-node/real-index frame-time or memory profile; caches reduce repeated derivation but are not performance certification. |
 
 ### Open in priority order
 
 1. Obtain the original master prompt from its author/path and reconcile this provisional matrix line by line; continue using the repository UX contract until then.
 2. Keep the typed cross-entity graph and full Markdown reader pending until the corresponding backend endpoints are committed and reviewed; do not synthesize entities or content.
-3. Capture frame-time/memory measurements for the synthetic 1,000-node graph and complete exact 1920×1080 / 2560×1440 checks if the browser exposes profiling and those viewports. The 1,000-node visual render smoke is complete; record timing limits separately and do not claim production performance from synthetic data.
+3. Capture frame-time/memory measurements for the synthetic 1,000-node graph if the browser exposes profiling. Exact 1920×1080 / 2560×1440 geometry is now checked with no horizontal overflow; wide screenshots are capped at 1280px. The 1,000-node render smoke is complete; do not claim production performance from synthetic data.
 4. Complete screen-reader/zoom checks when the browser exposes reliable inspection. Keyboard and pointer splitter resizing and narrow/desktop layout checks are already covered.
 5. Review the premium static audit’s 32 `actionless-button` findings against the delegated handlers and manually test the remaining legacy controls; do not add fake inline handlers.
 6. After the backend branch is reviewed, feature-detect the typed graph and authorized Markdown-content APIs, retain current fallbacks, and run UI + Python regression tests without indexing, syncing or writing SQLite.

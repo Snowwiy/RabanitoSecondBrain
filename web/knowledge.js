@@ -60,6 +60,19 @@ export function safeRelativePath(value) {
   return path;
 }
 
+export async function openAuthorizedSource(documentId, request, setStatus) {
+  const failure = 'No se pudo confirmar la apertura de la fuente autorizada. Reintenta desde el panel.';
+  try {
+    const result = await request(`/api/open/${Number(documentId)}`, {});
+    if (result?.opened !== true) { setStatus(failure, 'error'); return false; }
+    setStatus('El documento se abrió mediante la ruta autorizada del servidor local.');
+    return true;
+  } catch {
+    setStatus(failure, 'error');
+    return false;
+  }
+}
+
 function componentsFromAdjacency(adjacency) {
   const ids = [...adjacency.keys()].sort((a, b) => a.localeCompare(b, 'en'));
   const componentById = new Map(); let componentNumber = 0;
@@ -815,8 +828,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
     byId('ncOpenOriginal').addEventListener('click', async () => {
       if (!state.selectedDocument) return;
       byId('ncOpenOriginal').disabled = true;
-      try { await api(`/api/open/${Number(state.selected)}`, {}); setStatus('El documento se abrió mediante la ruta autorizada del servidor local.'); }
-      catch (error) { setStatus(`No se pudo abrir la fuente autorizada: ${String(error.message || 'error').slice(0, 160)}`, 'error'); }
+      try { await openAuthorizedSource(state.selected, api, setStatus); }
       finally { byId('ncOpenOriginal').disabled = false; }
     });
     byId('ncGetContext').addEventListener('click', () => void retrieveContext());

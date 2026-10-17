@@ -10,7 +10,7 @@ const createRequestGate = () => { let n=0; return {begin:()=>++n,current:id=>id=
 const requestJson = async () => ({});
 const safeReference = value => value;
 `;
-const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, hitTestOrbitNode, safeRelativePath, groupCommandNodes, explicitAdjacency};').toString('base64')}`);
+const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, hitTestOrbitNode, safeRelativePath, openAuthorizedSource, groupCommandNodes, explicitAdjacency};').toString('base64')}`);
 const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 
 test('normalization keeps only real graph endpoints and preserves suggested relation state', () => {
@@ -48,6 +48,19 @@ test('orbit preview displays only bounded relative paths', () => {
   assert.equal(ui.safeRelativePath('\\\\server\\private\\note.md'), '');
   assert.equal(ui.safeRelativePath('../outside.md'), '');
   assert.equal(ui.safeRelativePath('file:///private/note.md'), '');
+});
+
+test('authorized source opening only announces success when the API confirms opened true', async () => {
+  const states = [];
+  const request = async (path, body) => { assert.equal(path, '/api/open/42'); assert.deepEqual(body, {}); return {opened: false, fixture: true}; };
+  assert.equal(await ui.openAuthorizedSource(42, request, (...state) => states.push(state)), false);
+  assert.equal(states.at(-1)[1], 'error');
+  assert.match(states.at(-1)[0], /No se pudo confirmar/);
+  assert.equal(await ui.openAuthorizedSource(42, async () => ({opened: true}), (...state) => states.push(state)), true);
+  assert.match(states.at(-1)[0], /El documento se abrió/);
+  assert.equal(states.at(-1)[1], undefined);
+  assert.equal(await ui.openAuthorizedSource(42, async () => { throw new Error('private detail'); }, (...state) => states.push(state)), false);
+  assert.doesNotMatch(states.at(-1)[0], /private detail/);
 });
 
 test('hex groups use verified metadata; connected components use explicit links only', () => {
