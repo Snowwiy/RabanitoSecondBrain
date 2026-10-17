@@ -27,6 +27,10 @@ export function normalizeCommandGraph(payload) {
   return {nodes: uniqueNodes, edges: uniqueEdges, totalMatches: Math.max(uniqueNodes.length, Number(payload?.total_matches) || 0), truncated: Boolean(payload?.truncated)};
 }
 
+export function orbitLayoutKey({width, height, spacing, depth, minimumDegree, selectedId, componentFocus, groupBasis, groupName}) {
+  const selectionAffectsVisibility = Number(depth) > 0 || Number(minimumDegree) > 0;
+  return JSON.stringify([width, height, spacing, String(depth), String(minimumDegree), selectionAffectsVisibility ? selectedId : null, componentFocus, groupBasis, groupName]);
+}
 export function orbitCoordinates(nodes, width, height, spacing = 100) {
   const ordered = [...nodes].sort((a, b) => (b.degree - a.degree) || a.title.localeCompare(b.title, 'es-MX') || a.id.localeCompare(b.id));
   const result = new Map(), count = ordered.length;
@@ -418,7 +422,11 @@ export function startCommandCenter(doc, fetcher = fetch) {
     context.fillText('RABANITO · MEMORIA LOCAL', 0, -8);
     context.fillStyle = '#456269'; context.fillText(`${state.graph.nodes.length} NODOS INDEXADOS`, 0, 8);
     const spacing = byId('ncOrbitSpacing').value;
-    const layoutKey = JSON.stringify([rect.width, rect.height, spacing, byId('ncDepth').value, byId('ncMinDegree').value, state.selected, state.componentFocus, state.groupFocus?.basis, state.groupFocus?.name]);
+    const layoutKey = orbitLayoutKey({
+      width: rect.width, height: rect.height, spacing, depth: byId('ncDepth').value,
+      minimumDegree: byId('ncMinDegree').value, selectedId: state.selected,
+      componentFocus: state.componentFocus, groupBasis: state.groupFocus?.basis, groupName: state.groupFocus?.name,
+    });
     if (orbitLayoutCache.graph !== state.graph || orbitLayoutCache.key !== layoutKey) {
       const visibleNodes = graphNodesAtDepth();
       const positions = orbitCoordinates(visibleNodes, Math.max(1, rect.width - 24), Math.max(1, rect.height - 24), spacing);

@@ -10,7 +10,7 @@ const createRequestGate = () => { let n=0; return {begin:()=>++n,current:id=>id=
 const requestJson = async () => ({});
 const safeReference = value => value;
 `;
-const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, hitTestOrbitNode, safeRelativePath, openAuthorizedSource, groupCommandNodes, explicitAdjacency};').toString('base64')}`);
+const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, openAuthorizedSource, groupCommandNodes, explicitAdjacency};').toString('base64')}`);
 const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 
 test('normalization keeps only real graph endpoints and preserves suggested relation state', () => {
@@ -35,6 +35,14 @@ test('orbit coordinates are deterministic, bounded and include every node once',
   assert.equal(ui.orbitCoordinates(nodes, 0, 600).size, 0);
 });
 
+test('orbit layout keys ignore a global selection but invalidate selection-dependent neighborhoods and filters', () => {
+  const base = {width: 900, height: 600, spacing: 100, depth: '0', minimumDegree: '0', selectedId: 'node-a', componentFocus: null, groupBasis: undefined, groupName: undefined};
+  assert.equal(ui.orbitLayoutKey(base), ui.orbitLayoutKey({...base, selectedId: 'node-b'}));
+  assert.notEqual(ui.orbitLayoutKey({...base, depth: '1'}), ui.orbitLayoutKey({...base, depth: '1', selectedId: 'node-b'}));
+  assert.notEqual(ui.orbitLayoutKey({...base, minimumDegree: '2'}), ui.orbitLayoutKey({...base, minimumDegree: '2', selectedId: 'node-b'}));
+  assert.notEqual(ui.orbitLayoutKey(base), ui.orbitLayoutKey({...base, spacing: 110}));
+  assert.notEqual(ui.orbitLayoutKey(base), ui.orbitLayoutKey({...base, groupBasis: 'category', groupName: 'research'}));
+});
 test('orbit hit testing chooses the nearest target and rejects invalid or distant coordinates', () => {
   const points = new Map([['far', {x: 0, y: 0, hitRadius: 22}], ['near', {x: 16, y: 5, hitRadius: 28}]]);
   assert.equal(ui.hitTestOrbitNode(points, 15, 5), 'near');
@@ -139,6 +147,7 @@ test('Orbit reuses derived graph data and deterministic layout until graph or vi
   assert.match(source, /if \(!adjacencyCache\) adjacencyCache = explicitAdjacency\(state\.graph\)/);
   assert.match(source, /if \(!componentCache\) componentCache = componentsFromAdjacency\(graphAdjacency\(\)\)/);
   assert.match(source, /if \(orbitLayoutCache\.graph !== state\.graph \|\| orbitLayoutCache\.key !== layoutKey\)/);
+  assert.match(source, /const layoutKey = orbitLayoutKey\(\{/);
   assert.match(source, /const \{visibleNodes, visibleIds, local\} = orbitLayoutCache\.value/);
 });
 

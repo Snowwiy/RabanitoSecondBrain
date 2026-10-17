@@ -44,6 +44,12 @@
 - [x] Require both command-center and legacy source-open actions to receive `opened: true` before announcing success; cover HTTP 200 `opened: false` responses.
 - [x] Check responsive geometry at exact 1920×1080, 2560×1440 and 380×787; no horizontal overflow was found.
 
+- [x] Keep Orbit's deterministic global layout cache stable across node-selection redraws when depth and minimum degree are both zero; invalidate it when selected-node membership can change a depth/min-degree view.
+- [x] Add regression coverage for the selection-independent global cache key and selection-dependent neighborhoods/degree filters.
+- [x] Map all 32 premium static `actionless-button` findings to real ID-bound or `data-module`/`data-view` event handlers. No unbound button remained; the strict audit still reports these because it only analyzes literal markup, so no fake inline handlers were added.
+- [x] Browser-smoke a synthetic 1,000-node Orbit after loading all 999 explicit relations. Five ArrowRight selection action round trips had a median of 29 ms before and 21 ms after the cache-key fix; these timings include browser automation and are not isolated paint measurements.
+- [x] Run all 69 Node UI tests and `git diff --check`; the frontend-only phase does not change Python modules.
+
 ## Coverage audit and remaining work
 
 The user supplied the Neural Command Center mission and acceptance areas in this conversation. `UI_MASTER_SPEC.md` now records them as the working specification; the original prompt's verbatim wording is not required. Status statements below refer to committed implementation or actual evidence, and list unavailable or unverified behavior as open work.
@@ -58,16 +64,15 @@ The user supplied the Neural Command Center mission and acceptance areas in this
 | Personalization | Five themes; local layout, typography, density, zoom, transparency, color, labels, link appearance and reduced-motion preferences; no knowledge queries persisted. | Theme and reduced-motion browser smoke; transparency and text-scale values survived reload and were restored to defaults. | No screen-reader/forced-colors certification; browser zoom remains unverified. |
 | Filters | Query, project, source and category API filters; Orbit depth, minimum degree, suggestions, density and coloring controls. | Search/graph filter API coverage; browser QA verified Orbit and Dashboard query/source/category/tag/project. Read-only history/change refresh, audit report, decisions search, cited context, source preview and live result announcements were exercised. | Real-index filter behavior awaits safe integration QA; fixture content remains synthetic. |
 | Navigation | Roving tabs, keyboard/pointer node selection, arrows, Escape, search results, inspector neighbors, Tree and Hex actions, module disclosures, current-module state, keyboard and pointer splitters. | Node keyboard tests; synthetic-browser module navigation opened Projects, Coding Memory and Cyber panels and focused their headings/summaries; legacy search/context expose concise atomic live statuses; pointer dragging changed the Explorer's accessible width from 230 to 244. | Screen-reader certification remains open. |
-| Performance | Request cap 1,000; Orbit reuses adjacency/components/positions, and Galaxy reuses a node/adjacency index until a new graph arrives. | Node regression suite plus synthetic-browser render/interaction smoke through 1,000 nodes across Orbit, Hex, legacy Galaxy and Tree; responsive geometry checked at exact 1920×1080 and 2560×1440. | No measured 1,000-node/real-index frame-time or memory profile; caches reduce repeated derivation but are not performance certification. |
+| Performance | Request cap 1,000; Orbit reuses adjacency/components/positions, skips global layout recomputation on selection-only redraws, and Galaxy reuses a node/adjacency index until a new graph arrives. | Node regression tests; synthetic-browser smoke through 1,000 nodes/999 explicit edges. Five selection action round trips showed median 29 ms before and 21 ms after the cache-key fix; exact viewport geometry remains checked at 1920×1080 and 2560×1440. | Action timings include browser automation and are not isolated frame/paint data; no heap or real-index profile. |
 
 ### Open in priority order
 
-1. Finish mapping remaining premium static audit `actionless-button` findings to delegated handlers; the safe read-only legacy subset and evidence are recorded above. Do not add fake inline handlers or trigger indexing/sync/write actions.
-2. Test the bounded Orbit node list with a screen reader and browser zoom if those tools are available; the browser accessibility tree verifies semantics and keyboard selection, not screen-reader certification. Current browser shortcuts did not change zoom.
-3. Keep the typed cross-entity graph and full Markdown reader pending until the corresponding authorized backend endpoints are committed and reviewed; do not synthesize entities or content.
-4. Capture frame-time/memory measurements for the synthetic 1,000-node graph if the browser exposes profiling. Exact 1920×1080 / 2560×1440 geometry is checked with no horizontal overflow; the 1,000-node render smoke is not production performance certification.
-5. After backend changes are independently reviewed, feature-detect the typed graph and authorized Markdown-content APIs, retain current fallbacks, and run UI + Python regression tests without indexing, syncing or writing SQLite.
-6. Review shared-file conflicts with the backend author; never overwrite their changes. Any later PR/merge is separate from this branch task.
+1. Test the bounded Orbit node list with a screen reader and browser zoom if those tools are available; the browser accessibility tree verifies semantics and keyboard selection, not screen-reader certification. Current browser shortcuts did not change zoom.
+2. Keep the typed cross-entity graph and full Markdown reader pending until the corresponding authorized backend endpoints are committed and reviewed; do not synthesize entities or content.
+3. Use an isolated browser profiler for the 1,000-node frame-time/heap profile if one becomes available. The available browser driver only provided interaction round trips; exact 1920×1080 / 2560×1440 geometry and synthetic render smoke are not production performance certification.
+4. After backend changes are independently reviewed, feature-detect the typed graph and authorized Markdown-content APIs, retain current fallbacks, and run UI + Python regression tests without indexing, syncing or writing SQLite.
+5. Review shared-file conflicts with the backend author; never overwrite their changes. Any later PR/merge is separate from this branch task.
 
 ## Explicitly out of scope here
 
