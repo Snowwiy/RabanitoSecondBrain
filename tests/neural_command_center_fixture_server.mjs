@@ -42,7 +42,13 @@ const graph = {
   nodes: documents.map(({document_id, title, source_kind, category, project_id, project_name, relative_path, mtime_iso, degree}) => ({document_id, title, source_kind, category, project_id, project_name, relative_path, mtime_iso, degree})),
   edges, node_limit: largeFixture ? 1000 : 180, total_matches: documents.length, truncated: false,
 };
-const stats = {fixture, documents_active: documents.length, relations_resolved: edges.filter(edge => edge.kind === 'explicit').length, relations_suggested: edges.filter(edge => edge.kind === 'suggested').length, links_broken: 0, links_ambiguous: 0, projects: 1, unique_tags: 3, latest_scan: {status: 'ok', finished_at: '2026-10-15T10:00:00Z'}};
+const stats = {fixture, documents_active: documents.length, relations_resolved: edges.filter(edge => edge.kind === 'explicit').length, relations_suggested: edges.filter(edge => edge.kind === 'suggested').length, links_broken: 0, links_ambiguous: 0, projects: 1, unique_tags: 3, latest_scan: {scan_id: 7001, started_at: '2026-10-15T09:59:00Z', finished_at: '2026-10-15T10:00:00Z', status: 'ok', files_seen: documents.length, added: documents.length, modified: 0, unchanged: 0, removed: 0, skipped: 0, errors: 0, duration_ms: 1000, source_summary: {}}};
+const audit = {
+  fixture, generated_at: '2026-10-15T10:01:00Z', quality_score: 100, counts: {}, link_classifications: [],
+  missing_link_review_counts: {}, missing_link_path_state_counts: {}, missing_link_review: [], other_broken_findings: [],
+  index_drift_summary: {active_documents: documents.length, checked_documents: documents.length, bytes_hashed: 0, documents_out_of_sync: 0, documents_skipped_by_budget: 0, coverage_complete: true, findings_truncated: false, by_status: {}, review_only: true},
+  index_drift_findings: [], review_only: true,
+};
 const json = (response, value, status = 200) => { response.writeHead(status, {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Rabanito-Fixture': 'synthetic'}); response.end(JSON.stringify(value)); };
 
 const server = http.createServer(async (request, response) => {
@@ -63,6 +69,7 @@ const server = http.createServer(async (request, response) => {
       '/api/tags': {tags: [{tag: 'fixture', document_count: documents.length}]}, '/api/sources': {sources: fixtureSources},
       '/api/scans': {scans: []}, '/api/changes': {changes: []}, '/api/cyber/status': {entities: 0, records: 0, kev: 0, periodic_enabled: false, connectors: []},
     };
+    if (url.pathname === '/api/audit/latest') return json(response, audit);
     if (url.pathname.startsWith('/api/doc/')) {
       const document = documents.find(item => item.document_id === Number(url.pathname.split('/').pop()));
       if (document) return json(response, document);
@@ -107,6 +114,12 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === '/api/context') {
       const q = String(payload.q || 'consulta sintética');
       return json(response, {fixture, characters: Math.min(164, Number(payload.max_chars || 2400)), fragments: [{document_id: 7101, title: documents[0].title, text: `FIXTURE — fragmento sintético citado. Consulta: ${q}. No procede de ninguna bóveda ni repositorio real.`, line_start: 1, line_end: 2, source_kind: 'projects', relative_path: 'fixture/core/README.md', citation: 'projects:fixture/core/README.md:1-2'}]});
+    }
+    if (url.pathname === '/api/source-preview') {
+      const requestedPath = String(payload.path || '');
+      if (!/^[A-Za-z]:\\fixture(?:\\|$)/i.test(requestedPath)) return json(response, {error: 'Fixture previews accept only a synthetic C:\\fixture path.'}, 400);
+      const kind = ['local', 'research', 'reference'].includes(payload.kind) ? payload.kind : 'local';
+      return json(response, {fixture, kind, already_configured: false, approval_required: true, sample_entries: ['Fixture research note.md', 'Fixture sources README.md']});
     }
     if (url.pathname === '/api/decisions') return json(response, {records: []});
     if (url.pathname.startsWith('/api/open/')) return json(response, {opened: false, fixture, message: 'Opening is disabled in fixture mode.'});

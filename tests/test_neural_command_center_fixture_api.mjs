@@ -54,6 +54,35 @@ test('synthetic fixture API applies the dashboard search and graph filters', {ti
   assert.deepEqual(sources.sources.map(source => source.kind).sort(), ['internal', 'obsidian', 'projects']);
   assert.ok(sources.sources.every(source => source.enabled === true && source.managed === false && source.name.startsWith('Fixture')));
 
+  const statsResponse = await fetch(`${base}/api/stats`);
+  assert.equal(statsResponse.status, 200);
+  const stats = await statsResponse.json();
+  assert.equal(stats.fixture, true);
+  assert.deepEqual(
+    ['files_seen', 'added', 'modified', 'unchanged', 'removed', 'skipped', 'errors'].map(key => stats.latest_scan[key]),
+    [3, 3, 0, 0, 0, 0, 0],
+  );
+
+  const auditResponse = await fetch(`${base}/api/audit/latest`);
+  assert.equal(auditResponse.status, 200);
+  const audit = await auditResponse.json();
+  assert.equal(audit.review_only, true);
+  assert.equal(audit.fixture, true);
+  assert.equal(audit.index_drift_summary.coverage_complete, true);
+  assert.deepEqual(audit.index_drift_findings, []);
+  assert.deepEqual(audit.missing_link_review, []);
+
+  const preview = await postJson(base, '/api/source-preview', {path: 'C:\\fixture\\research', kind: 'research', name: 'Fixture research'});
+  assert.equal(preview.fixture, true);
+  assert.equal(preview.approval_required, true);
+  assert.deepEqual(preview.sample_entries, ['Fixture research note.md', 'Fixture sources README.md']);
+  assert.equal(Object.hasOwn(preview, 'absolute_path'), false);
+
+  const rejectedPreview = await fetch(`${base}/api/source-preview`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: 'C:\\external\\notes', kind: 'local'}),
+  });
+  assert.equal(rejectedPreview.status, 400);
+
   const graph = await postJson(base, '/api/graph', {
     domain: 'documents', limit: 1, source: 'projects', project_id: 7001,
     category: 'tech', q: 'README', suggestions: true, min_degree: 0,

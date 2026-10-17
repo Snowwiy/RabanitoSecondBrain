@@ -9,12 +9,12 @@
 
 ## Implemented checkpoint
 
-See `UI_MASTER_SPEC.md`, `UI_DEVELOPMENT_PROGRESS.md`, `UI_ARCHITECTURE.md`, `UI_TEST_RESULTS.md`, `FRONTEND_BACKEND_CONTRACT.md`, and the capability matrix in `UI_TASK_BACKLOG.md`. Current UI verification is 66 passing Node tests. The last full Python run was 290 tests (1 skipped); Python was not rerun in the frontend-only fixture/accessibility phases because no backend code changed.
+See `UI_MASTER_SPEC.md`, `UI_DEVELOPMENT_PROGRESS.md`, `UI_ARCHITECTURE.md`, `UI_TEST_RESULTS.md`, `FRONTEND_BACKEND_CONTRACT.md`, and the capability matrix in `UI_TASK_BACKLOG.md`. Current UI verification is 67 passing Node tests. The last full Python run was 290 tests (1 skipped); Python is not rerun in frontend-only fixture/accessibility phases because no backend code changed. The latest phase adds synthetic stats/audit/source-preview coverage, regression protection for visual-preference persistence, and browser QA of safe read-only controls.
 
 ## Immediate safe next steps
 
-1. Review the remaining premium static audit `actionless-button` findings against delegated handlers and manually exercise safe read-only legacy controls. Do not trigger indexing, source sync, relation writes or cyber sync during QA.
-2. Test the bounded Orbit node list with a screen reader and browser zoom if those tools become available; the current accessibility tree and keyboard checks do not certify assistive technology.
+1. Finish mapping remaining premium static audit `actionless-button` findings to delegated handlers. The safe read-only subset verified in this phase is listed in `UI_TEST_RESULTS.md`; do not trigger indexing, source sync, relation writes or cyber sync during QA.
+2. Test the bounded Orbit node list with a screen reader and verify browser zoom if those tools become available; the current browser accessibility tree and keyboard checks do not certify assistive technology. The available browser driver ignored Ctrl+plus/Ctrl+equal.
 3. Measure frame-time and memory for the synthetic 1,000-node graph only if the browser exposes reliable profiling. Exact 1920×1080 and 2560×1440 geometry passes without horizontal overflow; wide screenshots are capped at 1280px. Do not report synthetic performance as production certification.
 4. Before publication, fetch and compare `origin/Frontend-Design`, stage only intended source/docs/tests, and verify the pushed SHA with `git ls-remote`. Never force-push or touch `main`.
 

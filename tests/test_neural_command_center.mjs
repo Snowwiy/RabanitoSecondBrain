@@ -149,6 +149,20 @@ test('reduced-motion preference respects the OS default and keeps checkbox and t
   assert.equal((source.match(/byId\('ncReducedMotion'\)\.addEventListener\('change'/g) || []).length, 1);
 });
 
+test('visual preferences persist transparency and typography without storing knowledge content', () => {
+  const start = source.indexOf('function savePreferences() {');
+  const end = source.indexOf('\n  async function loadStats()', start);
+  const preferenceFields = source.slice(start, end);
+  assert.ok(start >= 0 && end > start, 'preference saver is present');
+  assert.match(preferenceFields, /localStorage\.setItem\('rabanito\.ui\.preferences'/);
+  assert.match(preferenceFields, /opacity: Number\(byId\('ncOpacity'\)\.value\)/);
+  assert.match(preferenceFields, /fontScale: Number\(byId\('ncFontScale'\)\.value\), typography: byId\('ncTypography'\)\.value/);
+  assert.doesNotMatch(preferenceFields, /\b(query|content|fragment|documentText|results)\b/i);
+  assert.match(html, /<span class="nc-label">Transparencia de paneles<\/span><input id="ncOpacity" type="range" min="60" max="100"/);
+  assert.match(source, /if \(id === 'ncOpacity'\) root\.style\.setProperty\('--nc-panel-alpha', `\$\{byId\(id\)\.value\}%`\)/);
+  assert.match(source, /if \(id === 'ncFontScale'\) root\.style\.fontSize = `\$\{byId\(id\)\.value\}%`/);
+});
+
 test('module navigation opens disclosures, announces the active destination and focuses a usable heading', () => {
   assert.match(html, /id="ncToggleExplorer" aria-controls="ncExplorer"/);
   assert.match(html, /id="ncToggleInspector" aria-controls="ncInspector"/);
