@@ -10,6 +10,11 @@ const port = Number(process.argv[2] || 8877);
 const fixture = true;
 const largeFixture = process.argv.includes('--large');
 const project = {project_id: 7001, name: 'Fixture Core', status: 'active', relative_path: 'fixture/core', technologies: ['Python', 'SQLite']};
+const fixtureSources = [
+  {source_id: 7002, kind: 'obsidian', enabled: true, managed: false, name: 'Fixture Obsidian'},
+  {source_id: 7003, kind: 'projects', enabled: true, managed: false, name: 'Fixture Core'},
+  {source_id: 7004, kind: 'internal', enabled: true, managed: false, name: 'Fixture Rabanito'},
+];
 const seedDocuments = [
   {document_id: 7101, title: 'Fixture — Arquitectura de memoria local', source_kind: 'projects', category: 'technical', project_id: 7001, project_name: 'Fixture Core', relative_path: 'README.md', mtime_iso: '2026-10-15T10:00:00Z', degree: 2, tags: ['fixture', 'arquitectura'], frontmatter: {status: 'fixture'}, links: [], incoming_links: []},
   {document_id: 7102, title: 'Fixture — Indexación incremental de notas', source_kind: 'obsidian', category: 'research', project_id: null, project_name: '', relative_path: 'Research/Indexación.md', mtime_iso: '2026-10-14T09:00:00Z', degree: 2, tags: ['fixture', 'obsidian'], frontmatter: {source: 'fixture'}, links: [], incoming_links: []},
@@ -55,7 +60,7 @@ const server = http.createServer(async (request, response) => {
     const routes = {
       '/api/health': {ok: true, host_policy: 'fixture-loopback', fixture}, '/api/stats': stats,
       '/api/projects': {projects: [project]}, '/api/categories': {categories: ['coding-memory', 'research', 'technical']},
-      '/api/tags': {tags: [{tag: 'fixture', document_count: documents.length}]}, '/api/sources': {sources: []},
+      '/api/tags': {tags: [{tag: 'fixture', document_count: documents.length}]}, '/api/sources': {sources: fixtureSources},
       '/api/scans': {scans: []}, '/api/changes': {changes: []}, '/api/cyber/status': {entities: 0, records: 0, kev: 0, periodic_enabled: false, connectors: []},
     };
     if (url.pathname.startsWith('/api/doc/')) {

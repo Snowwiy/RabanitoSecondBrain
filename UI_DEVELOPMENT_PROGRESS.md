@@ -36,9 +36,11 @@
 - The command-center Inspector now requires `/api/open/{id}` to return `opened: true` before announcing success; HTTP 200 with `opened: false` is announced as a recoverable failure without exposing server details.
 - Added a capability-by-capability implementation/evidence/gap matrix in `UI_TASK_BACKLOG.md`, reconciled against the user-provided mission captured in `UI_MASTER_SPEC.md`.
 - The synthetic fixture now applies source, project ID, category-prefix and title/path query filters to graph requests, and source/project/category-prefix/query/exact-tag filters to search. Graph `total_matches`, `truncated` and visible-edge endpoints are computed after filtering. Project metadata is carried on synthetic graph nodes.
+- The fixture exposes three enabled synthetic built-in sources so the legacy Dashboard's source selector has realistic options; API coverage checks that only fixture sources are reported.
 - Added an API-level fixture test that starts a fresh loopback-only server on a temporary port and proves each filter, combined search filters and graph truncation without contacting the real service or database.
 - Browser-verified Orbit source filters (Projects: 1 node; Obsidian with query “Indexación” and category `research`: 1 node), project filter (Fixture Core: 2 nodes/1 explicit edge), and category filter (`technical`: 1 node). Legacy dashboard search with query “Recuperación”, category prefix `coding`, exact tag `#retrieval`, and Fixture Core project returned only the matching synthetic record.
 - Added `UI_MASTER_SPEC.md` with mission, acceptance criteria, implementation evidence, ordered open work, and branch/data safeguards.
+- Browser-verified the legacy Dashboard source selector with query “Indexación”, category `research` and tag `#obsidian`: Obsidian returned one record; Projects returned none. The fixture remains clearly marked and isolated.
 - Added a collapsed screen-reader path for Orbit using a native list and pagination of 25 node buttons per page. Buttons expose title, category, source, project and `aria-pressed` selection state without creating 1,000 simultaneous tab stops or DOM rows.
 
 ## Verification evidence

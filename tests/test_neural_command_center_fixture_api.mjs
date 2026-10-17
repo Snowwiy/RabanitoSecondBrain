@@ -48,6 +48,12 @@ test('synthetic fixture API applies the dashboard search and graph filters', {ti
   }
   assert.ok(ready, `fixture server did not start: ${startupOutput} ${startupError}`);
 
+  const sourceResponse = await fetch(`${base}/api/sources`);
+  assert.equal(sourceResponse.status, 200);
+  const sources = await sourceResponse.json();
+  assert.deepEqual(sources.sources.map(source => source.kind).sort(), ['internal', 'obsidian', 'projects']);
+  assert.ok(sources.sources.every(source => source.enabled === true && source.managed === false && source.name.startsWith('Fixture')));
+
   const graph = await postJson(base, '/api/graph', {
     domain: 'documents', limit: 1, source: 'projects', project_id: 7001,
     category: 'tech', q: 'README', suggestions: true, min_degree: 0,
