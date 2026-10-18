@@ -13,7 +13,7 @@ All frontend requests use same-origin `127.0.0.1` endpoints exposed by the curre
 | Global search | `POST /api/search` `{q, limit, source?, category?, project_id?, tag?}` | `{results[]}` with document ID, title, source/category/project metadata, relative path, FTS snippet and match coverage. UI uses `textContent`. |
 | Cited context | `POST /api/context` `{q, limit, max_chars, source?, category?, project_id?, tag?}` | `{fragments[],characters,limit,max_chars}`. A fragment carries document ID/title/heading/text/line range/source/project/category/relative path/citation. API removes query and absolute paths from its dashboard response. |
 | Document metadata | `GET /api/doc/{positive-id}` | Safe document metadata, tags/frontmatter, outgoing/incoming link metadata. Does **not** return Markdown content. |
-| Full Markdown reader | `POST /api/doc/content` `{document_id: positive int, max_bytes: <=65536}` | **Not available in the tested production branch.** The UI sends this request only after the user clicks “Leer documento completo”; the synthetic fixture alone provides a clearly labeled sample response. |
+| Full Markdown reader | `POST /api/doc/content` `{document_id: positive int, max_bytes: <=65536}` | Present in published `origin/main` commit `5109981a794a41bb7b646beca61ad11045f18ea5`, but not yet integrated into `Frontend-Design`. The UI sends this request only after the user clicks “Leer documento completo”; the synthetic fixture is not production integration. |
 | Related docs | `GET /api/related/{positive-id}` | `{results[]}` bounded relation records. |
 | Document graph | `POST /api/graph` `{domain:'documents',limit<=1000,q?,source?,project_id?,category?,suggestions,min_degree?}` | `{nodes[],edges[],node_limit,total_matches,truncated}`. Nodes are active visible documents; paths are relative and private absolute roots are stripped. Edges have explicit/suggested `kind`; suggestions are excluded by default. |
 | Safe source opening | `POST /api/open/{positive-id}` `{}` | Server resolves the indexed active document and re-validates its authorized root before asking the OS to open it. UI never accepts a filesystem path. |
@@ -26,7 +26,7 @@ All frontend requests use same-origin `127.0.0.1` endpoints exposed by the curre
 - Hex grouping keys are verified project/category/source metadata. Optional “Componente conectado” is computed from explicit graph edges only and is not described as semantic community detection.
 - Tree uses `project_name` as a metadata group and lists explicit graph edges separately. It does not fabricate architecture/component levels.
 - `KNOWLEDGE GALAXY 3D` reparents the existing graph controls and canvas in the browser DOM. Its backend/API contract remains the existing `/api/graph` implementation.
-- Inspector queries `/api/doc/{id}` and then a capped `/api/context` request, displaying citation path and line range. The optional full Markdown adapter is user-triggered and sends an ID plus byte limit to `/api/doc/content`; a 404 explains that the production backend has not implemented it. The parser builds a bounded DOM from a Markdown subset, treats raw HTML as text, allows only HTTP(S) external links, and resolves internal document links only from returned authorized references. No Markdown body is stored in browser preferences.
+- Inspector queries `/api/doc/{id}` and then a capped `/api/context` request, displaying citation path and line range. The optional full Markdown adapter is user-triggered and sends an ID plus byte limit to `/api/doc/content`. A 404 is the fallback for a running backend that does not expose the route; although published `origin/main` now does, the route is not yet integrated into this `Frontend-Design` branch. The parser builds a bounded DOM from a Markdown subset, treats raw HTML as text, allows only HTTP(S) external links, and resolves internal document links only from returned authorized references. No Markdown body is stored in browser preferences.
 
 ## Pending typed Knowledge Graph API
 
@@ -48,9 +48,11 @@ Requirements: omit absolute roots and credentials; distinguish explicit, derived
 
 ## Required authorized document-content API
 
-The branch tested by this worktree has no document-body endpoint. For integration, implement the following read-only endpoint in the backend and review it independently:
+`Frontend-Design` at UI commit `4dd4a23f647a067cff862496a21fcecb502b8717` has no document-body endpoint. Published `origin/main` commit `5109981a794a41bb7b646beca61ad11045f18ea5` adds it in `rabanito/document_content.py` and routes it through `rabanito/server.py`.
 
 `POST /api/doc/content` with `{ "document_id": 123, "max_bytes": 65536 }`.
+
+The implementation also requires exactly those two JSON fields, HTTP loopback `Host` and same-origin `Origin` on the server port, JSON content type, and a body no larger than 2,048 bytes. GET returns 405. Its response shape below matches the existing frontend adapter.
 
 The server must accept only a positive indexed document ID and a `max_bytes` value in `1..65536`; it must never accept a filesystem path. It must resolve the active, visible document from the index, recheck source/project authorization and root/reparse-point/symlink protections immediately before reading, enforce the byte cap while reading, decode UTF-8 safely, and return no private absolute roots, credentials, or unrestricted filesystem metadata. If content is truncated, the response must cut at a valid UTF-8 boundary.
 
@@ -73,6 +75,13 @@ Required response shape:
 ```
 
 `references` must be bounded and resolved by the backend; relative paths must not contain absolute roots or parent traversal. The browser validates the selected document ID, response fields and UTF-8 byte count. It renders a restricted Markdown subset with DOM APIs only: raw HTML remains text; external links accept HTTP(S) without credentials; internal links navigate only to IDs in the response references. Unknown local links are inert text. The fixture endpoint is test-only, synthetic, loopback-bound and visibly marked; it is not evidence of production backend support.
+
+## Backend integration preflight (2026-10-18)
+
+- Read-only inspection confirmed the endpoint and tests are present in published `origin/main` commit `5109981a794a41bb7b646beca61ad11045f18ea5`. The implementation uses a read-only database snapshot, ID-based lookup, current source/project visibility checks, reparse/symlink defenses, bounded UTF-8 reading, stale-file detection and bounded authorized references.
+- `git merge-tree --write-tree Frontend-Design origin/main` found an add/add conflict in this file: both branches created `FRONTEND_BACKEND_CONTRACT.md` independently. No merge, cherry-pick or source copy was performed, as required by the conflict stop rule.
+- A wholesale merge would also bring many unrelated backend, security, knowledge-graph and documentation changes. After reconciling both contract files, integrate only the reader dependency closure (`rabanito/document_content.py` and the endpoint-specific import/handler/dispatch in `rabanito/server.py`, plus focused backend tests); retain and reconcile both branches' contract sections rather than taking either file wholesale.
+- Until that work is completed, `/api/doc/content` remains unavailable in `Frontend-Design`. No real Obsidian, project or internal-memory content was read in this preflight.
 
 ## Error and degradation behavior
 

@@ -2,7 +2,7 @@
 
 ## Current checkpoint
 
-- Last updated: 2026-10-17.
+- Last updated: 2026-10-18.
 - Worktree: dedicated `Frontend-Design` linked worktree (local path intentionally omitted from published docs).
 - Branch: `Frontend-Design`; base audited at `4474bfc91bcc8145b1573dfa36831c5626c5fd76`.
 - Frontend-only edits; no source edits in the original Second Brain checkout, Sol’s backend work, the SQLite index, Obsidian, Hermes, or other projects.
@@ -78,13 +78,20 @@
 
 ## Next action
 
-Continue through the open priorities in `UI_TASK_BACKLOG.md`; do not treat the passing tests or this checkpoint as completion of the full redesign. The reader adapter is ready for reviewed backend integration but the real branch API still has no `/api/doc/content` route. Keep the metadata/context fallback until the backend endpoint is independently reviewed and integrated. Do not touch `main` or the original worktree.
+Continue through the open priorities in `UI_TASK_BACKLOG.md`; do not treat the passing tests or this checkpoint as completion of the full redesign. The reader adapter is ready for backend integration. The route now exists in published `origin/main`, but `Frontend-Design` lacks it and a contract-file add/add conflict blocks integration. Keep the metadata/context fallback. Do not touch the original worktree.
 
 ## Markdown reader adapter phase (2026-10-17)
 
 - Added a bounded parser for headings, paragraphs, lists, tables, fenced code, block quotes, rules, inline code/emphasis, safe external links and reference-authorized internal links. It caps input at 65,536 characters, 4,096 lines, 2,048 blocks, 200 list/table rows per block and 512 reference records. It creates DOM elements/text nodes only; no `innerHTML` path was added.
 - Added the user-triggered `POST /api/doc/content` adapter with strict selected-ID/response validation, UTF-8 byte accounting, stale-request gates, loading, 404/413/contract/network error states, and a responsive in-document search with highlighted matches and previous/next navigation.
 - Separated a concise atomic live status from the full reader DOM so loading a long note does not announce the entire body at once. Internal document links dispatch through the existing selection flow; raw HTML and unknown local paths stay inert text.
-- The committed production API does not implement `/api/doc/content`. The adapter therefore remains production-blocked until an authorized ID-only backend route is independently implemented and reviewed; the reader route in the local visual fixture is explicitly synthetic and is not production integration.
+- At this phase checkpoint, the API committed on `Frontend-Design` did not implement `/api/doc/content`; the local visual fixture route was explicitly synthetic and was not production integration. A later read-only preflight (2026-10-18) found the authorized endpoint in published `origin/main`, but it remains absent from this branch pending resolution of the contract-file conflict.
 - The synthetic browser rendered headings, list items, table headers/rows, code, a safe external link, internal reference, source citation and inert `<img ... onerror=...>` text. In-document search found three occurrences and navigation advanced from 1/3 to 2/3. Browser DOM checks found zero `<img>`/`<script>` elements and no horizontal overflow at the 694px browser viewport. Missing-endpoint fixture showed the 404 fallback and retained metadata/fragments.
 - Final validation: 75 Node tests passed; syntax checks for the UI, fixture server and changed test modules passed; `git diff --check` passed. The premium strict audit returned 32 markup-only `actionless-button` findings (0 warnings), all matched to real ID-bound or delegated JavaScript handlers. Synthetic browser QA at 694px confirmed keyboard reader search, internal selection, raw HTML remaining text, no injected image/script nodes and no horizontal overflow; 404 and transport-failure fixtures retained metadata/context and showed recoverable feedback. Screen-reader certification and true browser zoom remain unverified.
+
+## Backend reader integration preflight (2026-10-18)
+
+- `git fetch origin` confirmed `main` at `5109981a794a41bb7b646beca61ad11045f18ea5` and `Frontend-Design` at `4dd4a23f647a067cff862496a21fcecb502b8717`.
+- Read-only inspection confirmed the endpoint implementation in `origin/main`. `git merge-tree --write-tree Frontend-Design origin/main` found an add/add conflict in `FRONTEND_BACKEND_CONTRACT.md`.
+- Per the requested conflict stop rule, no merge, cherry-pick, endpoint code copy, real-source read or endpoint test was performed. The UI branch remains unintegrated; the original checkout and its pending work were not modified.
+- Resolution required: reconcile both contract files, then import only the reader module, endpoint-specific server route and focused tests. Do not merge the full backend commit wholesale.

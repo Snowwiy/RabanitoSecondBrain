@@ -2,6 +2,12 @@
 
 Last verified: 2026-10-17. All browser checks used the loopback-only synthetic fixture server in `tests/neural_command_center_fixture_server.mjs`; the live index, Obsidian vault and operational SQLite database were not queried or modified.
 
+## Backend reader integration preflight (2026-10-18)
+
+- `git fetch origin` confirmed `origin/main` at `5109981a794a41bb7b646beca61ad11045f18ea5` and `origin/Frontend-Design` at `4dd4a23f647a067cff862496a21fcecb502b8717`.
+- Read-only inspection found the real `POST /api/doc/content` implementation in `origin/main:rabanito/document_content.py` and its route in `origin/main:rabanito/server.py`. The endpoint is available on `origin/main`, but not yet on `Frontend-Design`. `git merge-tree --write-tree Frontend-Design origin/main` reported one add/add conflict in `FRONTEND_BACKEND_CONTRACT.md`; no merge or cherry-pick was attempted.
+- No frontend/backend tests or real-source reads were run after reaching the requested conflict stop condition. No Obsidian or database data was modified; the frontend worktree remains unintegrated. Reconcile the contract conflict before continuing endpoint validation.
+
 ## Automated
 
 - `node --test tests/test_cyber_ui.mjs tests/test_graph_filter.mjs tests/test_neural_command_center.mjs tests/test_neural_command_center_fixture_api.mjs` — **75 passed, 0 failed, 0 skipped**. Coverage includes the bounded safe Markdown parser, reference authorization, raw HTML as inert text, capped fixture response fields, reader response shape, and a synthetic transport interruption, alongside the existing community, navigation, filter and accessibility regressions.

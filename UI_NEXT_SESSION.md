@@ -11,9 +11,11 @@
 
 See `UI_MASTER_SPEC.md`, `UI_DEVELOPMENT_PROGRESS.md`, `UI_ARCHITECTURE.md`, `UI_TEST_RESULTS.md`, `FRONTEND_BACKEND_CONTRACT.md`, and the capability matrix in `UI_TASK_BACKLOG.md`. The Markdown-reader phase now has 75 passing Node tests; browser QA covered the synthetic reader, keyboard search navigation, inert HTML, unavailable-endpoint fallback and transport-error feedback. The last full Python run was 290 tests (1 skipped); Python was not rerun because this phase changes only frontend code and synthetic fixtures. The graph phase adds deterministic multi-level topology estimates for explicit-link communities, Hex navigation/color support and numeric ordering; a separate 1,000-node/6,955-edge Node smoke took 44 ms, not a browser frame-time measurement.
 
+Backend continuation checkpoint (2026-10-18): `origin/main` publishes `POST /api/doc/content` in `5109981a794a41bb7b646beca61ad11045f18ea5`; `Frontend-Design` remains at reader commit `4dd4a23f647a067cff862496a21fcecb502b8717`. The no-worktree merge preflight found an add/add conflict in `FRONTEND_BACKEND_CONTRACT.md`. Per the stop rule, the endpoint was not merged or copied and no real source was read. Real endpoint availability in the frontend branch remains pending.
+
 ## Immediate safe next steps
 
-1. Backend work needed: implement and independently review ID-only `POST /api/doc/content` with the response contract in `FRONTEND_BACKEND_CONTRACT.md`; verify the current UI adapter against that real authorized route while preserving the visible 404 fallback. Do not read files directly.
+1. Reconcile the add/add conflict in `FRONTEND_BACKEND_CONTRACT.md`. Then selectively bring only the reader module, endpoint-specific server route and focused tests from published `origin/main`; do not merge the 102-path backend commit wholesale. Verify the real authorized route and preserve the 404 fallback; never read files through caller-supplied paths.
 2. Keep the typed cross-entity graph behind a reviewed read-only API and retain the existing graph fallback.
 3. Test the bounded Orbit list with a screen reader and verify browser zoom only if reliable tools become available; browser AX/keyboard checks do not certify assistive technology, and Ctrl+plus/Ctrl+equal had no effect.
 4. If an isolated browser profiler becomes available, measure 1,000-node frame time and heap. Current ArrowRight timings are browser-driver round trips (26–36 ms before, 19–22 ms after) and do not represent paint time; the 44 ms community result is Node-only. Geometry at 1920×1080 and 2560×1440 remains overflow-free.
@@ -21,7 +23,7 @@ See `UI_MASTER_SPEC.md`, `UI_DEVELOPMENT_PROGRESS.md`, `UI_ARCHITECTURE.md`, `UI
 
 ## Known product limitations
 
-- The Markdown reader adapter is implemented and tested against a synthetic fixture, but production full-body reading depends on the backend endpoint not present in the tested base. Typed cross-entity Knowledge Graph also depends on a reviewed backend API; see `FRONTEND_BACKEND_CONTRACT.md`.
+- The Markdown reader adapter is implemented and tested against a synthetic fixture. The production endpoint exists in `origin/main` but is not in `Frontend-Design` because contract reconciliation is blocked; see `FRONTEND_BACKEND_CONTRACT.md`. Typed cross-entity Knowledge Graph also depends on its reviewed integration path.
 - The current Galaxy is the existing Canvas-based graph, not a newly implemented WebGL renderer.
 - Visible browser QA covered desktop-sized 1264×715 and 380×787, using synthetic data only. Exact 1920×1080 and 2560×1440 geometry also passed without horizontal overflow, though wide captures are capped at 1280px. Production-data QA remains pending.
 - `UI_MASTER_SPEC.md` records the master mission and acceptance criteria supplied directly in the conversation; line-by-line implementation status and remaining gaps are maintained in `UI_TASK_BACKLOG.md`.

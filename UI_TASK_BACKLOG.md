@@ -75,7 +75,7 @@ The user supplied the Neural Command Center mission and acceptance areas in this
 
 ### Open in priority order
 
-1. Integrate and independently review the backend `POST /api/doc/content` contract, then verify the real endpoint through the ID-only adapter while preserving the 404 fallback. Never read a file through a caller-supplied path.
+1. Reconcile the add/add `FRONTEND_BACKEND_CONTRACT.md` conflict found by `git merge-tree`; then selectively integrate the published endpoint module and route while preserving both contract sets. Verify authorized real-source reads and the 404 fallback without caller-supplied paths. Do not merge the full backend commit wholesale.
 2. Continue the typed cross-entity graph only when its read-only API contract is available and reviewed; keep the current document graph fallback.
 3. Test the bounded Orbit node list with a screen reader and browser zoom if reliable tools are available; browser AX/keyboard checks do not certify assistive technology. Current browser shortcuts did not change zoom.
 4. Use an isolated browser profiler for the 1,000-node frame-time/heap profile if one becomes available. Current interaction timings include browser automation overhead and are not frame-time certification.
