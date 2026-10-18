@@ -23,21 +23,25 @@ class PublicationTests(unittest.TestCase):
 
     def test_reviewed_fixture_is_not_a_file_wide_exemption(self) -> None:
         candidate = "-----BEGIN " + "PRIVATE KEY-----"
-        issues = inspect_text("tests/test_core.py", repr(candidate).encode())
-        self.assertIn("private_key", {i["rule"] for i in issues})
+        for path in ("tests/test_core.py", "tests/test_dependencies.py", "tests/test_security_releases.py"):
+            with self.subTest(path=path):
+                issues = inspect_text(path, repr(candidate).encode())
+                self.assertIn("private_key", {i["rule"] for i in issues})
 
     def test_new_literal_on_reviewed_fixture_line_is_still_reported(self) -> None:
         from scripts.publication_audit import REVIEWED_TEST_LITERALS
         import hashlib
-        path = Path(__file__).with_name("test_core.py")
-        approved = next(node.value for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
-                        if isinstance(node, ast.Constant) and isinstance(node.value, str)
-                        and hashlib.sha256(node.value.encode()).hexdigest() in REVIEWED_TEST_LITERALS["tests/test_core.py"])
         candidate = "-----BEGIN " + "PRIVATE KEY-----"
-        payload = (repr(approved) + "; " + repr(candidate)).encode()
-        issues = inspect_text("tests/test_core.py", payload)
-        self.assertEqual(len(issues), 1)
-        self.assertEqual(issues[0]["rule"], "private_key")
+        for relative, fingerprints in REVIEWED_TEST_LITERALS.items():
+            path = Path(__file__).resolve().parents[1] / relative
+            approved = next(node.value for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+                            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                            and hashlib.sha256(node.value.encode()).hexdigest() in fingerprints)
+            with self.subTest(path=relative):
+                payload = (repr(approved) + "; " + repr(candidate)).encode()
+                issues = inspect_text(relative, payload)
+                self.assertEqual(len(issues), 1)
+                self.assertEqual(issues[0]["rule"], "private_key")
 
     def test_binary_oversize_and_unreviewed_types_are_rejected(self) -> None:
         for path, payload, expected in (("web/a.js", b"a\x00b", "binary_content"),

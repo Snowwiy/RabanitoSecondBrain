@@ -31,6 +31,8 @@ def run_cyber_watch(settings: Settings, *, start: bool = False, cycles: int | No
         raise ValueError("Cyber cadence sources must be distinct approved provider names")
     if cycles is not None and (type(cycles) is not int or cycles < 1):
         raise ValueError("cycles must be positive")
+    if "msrc" in sources:
+        raise ValueError("MSRC is manual-only; use cyber sync --source msrc --month YYYY-Mmm")
     operation, pause = sync or sync_source, sleep or time.sleep
     output = emit or (lambda line: print(line, flush=True))
     completed = 0

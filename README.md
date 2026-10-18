@@ -9,13 +9,26 @@ Memoria técnica local, incremental y trazable para documentación Markdown, Obs
 - Descubrimiento de proyectos de primer nivel y raíces VCS propias anidadas. Fichas derivadas de documentación/metadatos: no copia repositorios ni ejecuta manifiestos.
 - Decisiones y experiencias con estados explícitos, evidencia y revisión humana; recuperación similar y recurrencias descriptivas, no entrenamiento.
 - Onboard, Audit, Link, Level Up y entrevistas que requieren aprobación para guardar. Las sugerencias y contradicciones heurísticas no son hechos confirmados.
-- Cyber Threat Knowledge: CISA KEV, NVD, FIRST EPSS y OSV; procedencia, fechas, consultas offline, caché HTTP, límites y sincronización explícita. La paginación NVD densa conserva checkpoints y publica solo ventanas completas.
-- Security Architecture: catálogo inicial de 28 referencias, controles y conceptos con resúmenes propios sobre Zero Trust y estándares. No es una biblioteca normativa completa ni prueba de cumplimiento.
-- Inspección defensiva offline de CycloneDX/SPDX, package-lock npm y requisitos Python exactos contra OSV local. Devuelve candidatos, no vulnerabilidad demostrada ni estado instalado.
+- Cyber Threat Knowledge: CISA KEV, NVD, FIRST EPSS, OSV y [MSRC por mes explícito](docs/MSRC_CONTRACT.md); procedencia, fechas, consultas offline, caché HTTP, límites y sincronización explícita. La paginación NVD densa conserva checkpoints y publica solo ventanas completas. MSRC conserva versiones/capturas por documento sin renovar observaciones cuando solo se comprueba el resumen.
+- [Security Architecture](docs/SECURITY_CATALOG.md):72fichas y66relaciones, incluidos26resultados seleccionados CSF2.0 yconceptos Zero Trust NIST/CISA con localizadores. Búsqueda/contexto por edición revisada con fechas y precisión de publicación. Principios, pilares y etapas son conceptos, no controles implantados. No es una biblioteca normativa completa, importación STIX ni prueba de cumplimiento.
+- [MITRE ATT&CK® fijado](docs/ATTACK_CAPTURE.md): captura explícita de un dominio/edición/commit con tamaño, Git blob y SHA256 verificados, licencia preservada y recuperación offline citada/acotada. [Índice transaccional](docs/ATTACK_INDEX.md) enSQLite compartida, FTS, ediciones anteriores, cambios observados y relaciones paginadas porCLI/API RO. [Grafo backend](docs/ATTACK_GRAPH.md) tipado desde el head, con filtros de estados y sin inferir exposición local. Enterprise20.0 validado con datos reales; la vista visual nueva sigue pendiente.
+- Inspección defensiva offline de CycloneDX/SPDX, package-lock npm, requisitos Python exactos, [uv.lock](docs/UV_LOCK.md) y [pylock.toml portable](docs/PYLOCK.md) seleccionados contra OSV local. [Orden PEP440 acotado](docs/PEP440.md) con epochs, pre/post/dev y equivalencia pública; builds locales requieren revisión. Distingue fuentes PyPI declaradas de paquetes privados, Git y workspace; no evalúa entornos del lock universal. Devuelve candidatos, no vulnerabilidad demostrada ni estado instalado.
 - Dashboard local y grafo 3D de datos reales; vistas separadas de documentos, vulnerabilidades y estándares. Sin CDN, telemetría ni servicios públicos obligatorios.
 - Respaldos SQLite verificados, restauración protegida, bloqueos de escritura y migraciones aditivas.
+- Desarrollo local posterior al respaldo: [snapshots/VEX revisado](docs/DEPENDENCY_MEMORY.md) y [revisiones observadas Cyber](docs/CYBER_HISTORY.md), con CLI/API documentadas y pruebas. No se publican automáticamente ni sustituyen los candidatos originales por afirmaciones de seguridad.
+- [Grafo unificado backend](docs/KNOWLEDGE_GRAPH.md): proyección incremental, nodos/aristas tipados y citados, consultas paginadas y expansión por vecinos con aislamiento. El dashboard conserva su renderer actual; no confundir la API nueva con una interfaz visual ya integrada.
+- [Lector Markdown por ID](FRONTEND_BACKEND_CONTRACT.md): `POST /api/doc/content`
+  entrega una vista local de documentos autorizados, limitada a65.536bytes,
+  con referencias resueltas y protección de rutas. Sin sincronizar ni escribir
+  Obsidian. El contrato está preparado para el lector de Frontend-Design;
+  no implica que ambas ramas estén fusionadas ni una QA visual realizada.
+- [Reutilización de análisis de inventarios](docs/DEPENDENCY_CACHE.md) guardados explícitamente: verificación de bytes, permisos e inputs OSV antes de evitar recálculos. Consultar no guarda caché ni suprime candidatos por VEX.
 
 ## Arquitectura
+
+[Experiencias documentadas de entorno](docs/DOCUMENTED_MEMORY.md) añaden recuperación explícita de relatos humanos aprobados con evidencia parcial: contexto lógico, citas de líneas y límites siempre visibles. Permanecen separadas de soluciones verificadas y no requieren incorporar repositorios externos.
+
+Además, [ASVS 5.0.0 estructurado](docs/ASVS.md) ofrece 345 requisitos y su jerarquía desde una revisión oficial fijada: licencia CC BY-SA 4.0 preservada, búsqueda por L exacto, citas JSON Pointer y registro persistente. No demuestra controles implantados ni asigna esa licencia al código.
 
 Python estándar contiene indexador, recuperación, CLI y servidor HTTP. Una SQLite/FTS5 comparte dominios con tablas/esquemas separados; Markdown conserva memoria revisable y JSON configuración e intercambio. El frontend existente usa HTML, JavaScript y canvas locales.
 
@@ -24,6 +37,7 @@ Python estándar contiene indexador, recuperación, CLI y servidor HTTP. Una SQL
 | Documentos, proyectos y memoria | `rabanito/` |
 | Vulnerabilidades y sincronización | `rabanito/cyber/` |
 | Estándares y subgrafos públicos | `rabanito/security.py`, `rabanito/public_graph.py` |
+| Proyección y consulta unificada del grafo | `rabanito/knowledge_graph/` |
 | Configuración portable y catálogo | `config/` |
 | Dashboard existente | `web/` |
 | Skills y scripts reversibles | `.agents/`, `.claude/`, `skills/`, `integrations/scripts/` |
@@ -34,6 +48,7 @@ Ver [arquitectura](ARCHITECTURE.md), [contratos HTTP](docs/API_CONTRACT.md), [de
 ## Requisitos
 
 - Windows nativo y Python 3.11+ con SQLite FTS5. La matriz actual se ejecuta en Python 3.14.7 / SQLite 3.53.1; no certifica todos los intérpretes soportados.
+- La API nueva de grafo unificado requiere SQLite3.35+; si el intérprete incluye una versión anterior, el resto del núcleo no se reemplaza ni instala automáticamente.
 - Cero dependencias Python de terceros para ejecutar desde el checkout. No requiere WSL, Docker ni API de IA.
 - PowerShell para instaladores opcionales y sus pruebas. Node.js solo para pruebas JavaScript, no para servir el dashboard.
 - Internet solo para actualizar fuentes públicas y Git; las consultas del índice funcionan offline.

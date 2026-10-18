@@ -8,9 +8,11 @@ import uuid
 
 from .config import Settings
 from .cyber.model import date, public_url, text
+from .cyber.transport import _unique_object
 from .db import Database
 from .indexer import _index_lock
-from .utils import contains_reparse_component, iso_now
+from .utils import contains_reparse_component, iso_now, safe_relative
+from .security_releases import day, validate_releases
 
 
 SCHEMA = """
@@ -62,6 +64,7 @@ def validate_catalog(data: object) -> tuple[list[dict], list[dict], str]:
     reviewed = date(data.get("reviewed_on"))
     if not version or not reviewed:
         raise ValueError("Catalog version and review date are required")
+    releases = validate_releases(data.get("source_releases", {}), OFFICIAL_HOSTS, _id)
     entries, ids = [], set()
     for raw in data["entries"]:
         if not isinstance(raw, dict):
@@ -71,18 +74,30 @@ def validate_catalog(data: object) -> tuple[list[dict], list[dict], str]:
             raise ValueError("Duplicate security identifier")
         ids.add(entry_id)
         url = public_url(raw.get("source_url"))
-        if not url or urlsplit(url).scheme != "https" or urlsplit(url).hostname not in OFFICIAL_HOSTS:
+        licensed = None
+        if "asvs" in raw:
+            from .asvs import validate_metadata
+            licensed = validate_metadata(raw)
+        if not url or urlsplit(url).scheme != "https" or (urlsplit(url).hostname not in OFFICIAL_HOSTS and licensed is None):
             raise ValueError("Security catalog requires an official public HTTPS reference")
         if raw.get("kind") not in {"framework", "control", "concept", "reference"} or raw.get("edition_status") not in {"published", "historical", "draft", "rolling"}:
             raise ValueError("Invalid security classification")
         entry = {"id": entry_id, "framework": _id(raw.get("framework")), "kind": raw["kind"],
                  "edition_status": raw["edition_status"], "title": text(raw.get("title"), 300),
                  "edition": text(raw.get("edition"), 150), "summary": text(raw.get("summary"), 3000),
-                 "source_url": url, "locator": text(raw.get("locator"), 300), "reviewed_on": reviewed,
+                 "source_url": url, "locator": text(raw.get("locator"), 300),
+                 "reviewed_on": day(raw["reviewed_on"]) if "reviewed_on" in raw else reviewed,
                  "knowledge_type": "own_summary_of_cited_source", "rights": "Reference and original short summary only; source license still applies.",
                  "tags": raw.get("tags", [])}
         if not entry["title"] or not entry["summary"] or not isinstance(entry["tags"], list) or len(entry["tags"]) > 30 or any(not isinstance(t, str) or len(t) > 100 for t in entry["tags"]):
             raise ValueError("Invalid security summary/tags")
+        if "release_id" in raw:
+            release_id = _id(raw["release_id"])
+            if release_id not in releases or raw["edition_status"] == "rolling":
+                raise ValueError("Unknown security release or rolling reference cannot be pinned")
+            entry["source_release"] = releases[release_id]
+        if licensed is not None:
+            entry.update(licensed)
         entries.append(entry)
     relations = data.get("relations", [])
     if not isinstance(relations, list) or len(relations) > 30000:
@@ -92,7 +107,7 @@ def validate_catalog(data: object) -> tuple[list[dict], list[dict], str]:
         if not isinstance(relation, dict) or relation.get("source") not in ids or relation.get("target") not in ids:
             raise ValueError("Dangling security relation")
         kind = relation.get("type")
-        if kind not in {"part_of", "superseded_by", "editorial_overlap"}:
+        if kind not in {"part_of", "superseded_by", "editorial_overlap", "edition_of"}:
             raise ValueError("Invalid security relation type")
         normalized.append({"source": relation["source"], "target": relation["target"], "type": kind,
                            "rationale": text(relation.get("rationale"), 1000),
@@ -100,11 +115,21 @@ def validate_catalog(data: object) -> tuple[list[dict], list[dict], str]:
     return entries, normalized, version
 
 
-def index_security_catalog(settings: Settings) -> dict:
+def index_security_catalog(settings: Settings, *, asvs_capture: str | None = None, replace_asvs=False) -> dict:
     path = settings.root / "config" / "security_catalog.json"
     if contains_reparse_component(path) or path.stat().st_size > 2 * 1024 * 1024:
         raise ValueError("Security catalog is unsafe or exceeds limit")
-    entries, relations, version = validate_catalog(json.loads(path.read_text(encoding="utf-8")))
+    base = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
+    validate_catalog(base)
+    if type(replace_asvs) is not bool or replace_asvs and asvs_capture is None:
+        raise ValueError("replace_asvs_requires_capture")
+    candidate = None
+    if asvs_capture is not None:
+        from .asvs import import_payload
+        candidate = import_payload(settings, asvs_capture)
+    for output in (settings.database_path, settings.data_dir, settings.data_dir / "backups", settings.data_dir / "index.lock"):
+        if safe_relative(output, settings.root) in {None, "", "."} or contains_reparse_component(output):
+            raise ValueError("unsafe_security_catalog_output")
     with _index_lock(settings), Database(settings.database_path) as db:
         backup = None
         if not _exists(db) and db.one("SELECT count(*) n FROM documents")["n"]:
@@ -112,11 +137,29 @@ def index_security_catalog(settings: Settings) -> dict:
             db.backup(target)
             backup = target.name
         _schema(db)
+        from .security_imports import KEY, read_imports, encode, merge
+        imports = read_imports(db)
+        registered_before = encode({'schema':1,'imports':imports})
+        if candidate is not None:
+            from .asvs import FRAMEWORK
+            old_import = imports.get(FRAMEWORK)
+            same = old_import and all(old_import['source_dataset'][k]==candidate['source_dataset'][k] for k in ('commit','sha256'))
+            if old_import and not same and not replace_asvs:
+                raise ValueError('asvs_snapshot_change_requires_explicit_replace')
+            if not same:
+                imports[FRAMEWORK] = candidate
+        # Validate registry rights as well as the merged catalog before publishing.
+        registered = encode({'schema':1,'imports':imports})
+        entries, relations, version = validate_catalog(merge(base, imports))
+        registry_changed = registered != registered_before
+        if registry_changed:
+            target = settings.data_dir / 'backups' / ('pre-security-asvs-' + uuid.uuid4().hex + '.db')
+            db.backup(target)
+            backup = target.name
         counts = {"added": 0, "modified": 0, "unchanged": 0, "retired": 0}
         timestamp = iso_now()
         try:
             db.execute("BEGIN IMMEDIATE")
-            db.execute("DELETE FROM security_relations")
             seen = set()
             for entry in entries:
                 entry_id = entry["id"]
@@ -133,29 +176,50 @@ def index_security_catalog(settings: Settings) -> dict:
                            "data_json=excluded.data_json,fingerprint=excluded.fingerprint,indexed_at=excluded.indexed_at,active=1",
                            (entry_id, entry["framework"], entry["kind"], entry["edition_status"], entry["title"], rendered, fingerprint, timestamp))
                 db.execute("DELETE FROM security_fts WHERE entry_id=?", (entry_id,))
-                db.execute("INSERT INTO security_fts VALUES (?,?,?,?)", (entry_id, entry["title"], entry["summary"], " ".join([entry_id, entry["framework"], *entry["tags"]])))
+                release = entry.get("source_release", {})
+                db.execute("INSERT INTO security_fts VALUES (?,?,?,?)", (entry_id, entry["title"], entry["summary"], " ".join([entry_id, entry["framework"], release.get("id", ""), release.get("version", ""), *entry["tags"]])))
             for row in db.query("SELECT entry_id FROM security_entries WHERE active=1"):
                 if row["entry_id"] not in seen:
                     db.execute("UPDATE security_entries SET active=0 WHERE entry_id=?", (row["entry_id"],))
                     db.execute("DELETE FROM security_fts WHERE entry_id=?", (row["entry_id"],))
                     counts["retired"] += 1
-            db.executemany("INSERT INTO security_relations VALUES (?,?,?,?,?)", [
-                (r["source"], r["target"], r["type"], r["rationale"], r["validation"]) for r in relations])
+            old_relations = {(r['source_id'],r['target_id'],r['relation_type']):(r['rationale'],r['validation']) for r in db.query('SELECT * FROM security_relations')}
+            new_relations = {(r['source'],r['target'],r['type']):(r['rationale'],r['validation']) for r in relations}
+            if len(new_relations)!=len(relations):
+                import sqlite3
+                raise sqlite3.IntegrityError('Duplicate security relation')
+            for key in old_relations.keys()-new_relations.keys():
+                db.execute('DELETE FROM security_relations WHERE source_id=? AND target_id=? AND relation_type=?', key)
+            changed_relations=[(*key,*value) for key,value in new_relations.items() if old_relations.get(key)!=value]
+            db.executemany('INSERT INTO security_relations VALUES (?,?,?,?,?) ON CONFLICT(source_id,target_id,relation_type) '
+                          'DO UPDATE SET rationale=excluded.rationale,validation=excluded.validation', changed_relations)
+            if registry_changed:
+                db.execute('INSERT INTO meta VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (KEY,registered))
             db.execute("INSERT INTO meta VALUES ('security_catalog_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (version,))
             db.execute("INSERT INTO meta VALUES ('security_catalog_indexed_at',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (timestamp,))
             db.commit()
         except BaseException:
             db.connection.rollback()
             raise
-    return {"status": "ok", "catalog_version": version, **counts, "relations": len(relations), "migration_backup": backup}
+    return {"status": "ok", "catalog_version": version, **counts, "relations": len(relations), "migration_backup": backup,
+            "registered_imports":len(imports),"registry_changed":registry_changed}
 
 
 def search_security(settings: Settings, query: str = "", *, framework: str | None = None,
-                    kind: str | None = None, edition_status: str | None = None, limit: int = 20, offset: int = 0) -> dict:
+                    kind: str | None = None, edition_status: str | None = None, release: str | None = None,
+                    limit: int = 20, offset: int = 0, level: int | None = None) -> dict:
     if not isinstance(query, str) or len(query) > 500:
         raise ValueError("Security query exceeds limit")
     limit, offset = min(max(int(limit), 0), 100), min(max(int(offset), 0), 100000)
     conditions, params, join = ["s.active=1"], [], ""
+    if level is not None:
+        if type(level) is not int or level not in (1,2,3):
+            raise ValueError('invalid_asvs_level_filter')
+        conditions.append("json_extract(s.data_json,'$.asvs.level')=?")
+        params.append(level)
+    if release is not None:
+        conditions.append("json_extract(s.data_json,'$.source_release.id')=?")
+        params.append(_id(release))
     for field, value in (("framework", framework), ("kind", kind), ("edition_status", edition_status)):
         if value:
             conditions.append("s." + field + "=?")
@@ -194,17 +258,26 @@ def get_security_entry(settings: Settings, entry_id: str) -> dict | None:
         return result
 
 
-def security_context(settings: Settings, query: str, *, max_chars: int = 6000, limit: int = 8) -> dict:
+def security_context(settings: Settings, query: str, *, max_chars: int = 6000, limit: int = 8,
+                     framework: str | None = None, kind: str | None = None,
+                     edition_status: str | None = None, release: str | None = None, level: int | None = None) -> dict:
     budget = min(max(int(max_chars), 0), 100000)
     if not budget:
         return {"fragments": [], "used_chars": 0, "max_chars": 0}
-    results = search_security(settings, query, limit=limit)
+    results = search_security(settings, query, limit=limit, framework=framework, kind=kind,
+                              edition_status=edition_status, release=release, level=level)
     fragments, used = [], 0
     for item in results["results"]:
         if used >= budget:
             break
         passage = item["summary"][:budget - used]
         fragments.append({"id": item["id"], "text": passage, "citation": item["source_url"], "locator": item["locator"],
+                          "framework": item["framework"], "edition": item["edition"],
                           "edition_status": item["edition_status"], "reviewed_on": item["reviewed_on"], "knowledge_type": item["knowledge_type"]})
+        if "source_release" in item:
+            fragments[-1]["source_release"] = item["source_release"]
+        for field in ('asvs','source_dataset','source_license','rights'):
+            if field in item:
+                fragments[-1][field] = item[field]
         used += len(passage)
     return {"fragments": fragments, "used_chars": used, "max_chars": budget, "total_matches": results["total"]}

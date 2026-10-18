@@ -44,6 +44,10 @@ REVIEWED_TEST_LITERALS = {
         "ba03a036d1a2ef488b24646bf3c89bf51f848d24ea8a85210ae2c3bf79216db6",
         "22bbfbfc61a4c41414db6b7cd501ad6cff841070a07952388f1d044686a68092",
     },
+    # Synthetic credential URL rejected by release validation, never used on the wire.
+    "tests/test_security_releases.py": {
+        "c24f79b69053e4fa4169c928b654ddec878eac177891e8f2c363a06a4174d04e",
+    },
 }
 
 

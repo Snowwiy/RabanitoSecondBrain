@@ -1,5 +1,7 @@
 # Experiencias de programación verificadas
 
+Para experiencias de **entorno** aprobadas pero con evidencia parcial, consultar [Documented Memory](docs/DOCUMENTED_MEMORY.md) y usar `coding documented`. Ese modo mantiene atribución, límites y `fully_verified=false`; no cambia los requisitos ni resultados del modo verificado descrito abajo, no registra proyectos externos y no ejecuta reparaciones.
+
 Se reutiliza el almacén existente: `decision add` crea Markdown revisable bajo `knowledge/decisions/`; la indexación habitual lo incorpora a SQLite. No existe una segunda memoria ni entrenamiento de modelos. Las Skills conservan la revisión/aprobación humana antes de guardar conocimiento confirmado.
 
 ```powershell

@@ -36,15 +36,15 @@ class SecurityKnowledgeTests(unittest.TestCase):
 
     def test_curated_catalog_has_official_sources_and_no_equivalence_claims(self):
         entries, relations, version = validate_catalog(self.catalog)
-        self.assertEqual(len(entries), 28)
-        self.assertEqual(version, "2026-10-16.2")
+        self.assertEqual(len(entries), 72)
+        self.assertEqual(version, "2026-10-17.2")
         self.assertTrue(all(x["source_url"].startswith("https://") and x["locator"] for x in entries))
         self.assertTrue(all(x["validation"] == "unvalidated_editorial" for x in relations if x["type"] == "editorial_overlap"))
         self.assertTrue(any(x["edition_status"] == "historical" for x in entries))
 
     def test_offline_index_search_control_reference_and_context(self):
         with patch("urllib.request.OpenerDirector.open", side_effect=AssertionError("No network")):
-            self.assertEqual(index_security_catalog(self.settings)["added"], 28)
+            self.assertEqual(index_security_catalog(self.settings)["added"], 72)
             found = search_security(self.settings, "Zero Trust")
             self.assertGreater(found["total"], 0)
             self.assertTrue(all(x["knowledge_type"] == "own_summary_of_cited_source" for x in found["results"]))
@@ -57,15 +57,16 @@ class SecurityKnowledgeTests(unittest.TestCase):
 
     def test_incremental_index_changes_one_summary_and_preserves_others(self):
         index_security_catalog(self.settings)
-        self.assertEqual(index_security_catalog(self.settings)["unchanged"], 28)
+        self.assertEqual(index_security_catalog(self.settings)["unchanged"], 72)
         self.catalog["entries"][0]["summary"] += " Nueva revisión editorial documentada."
         self.save_catalog()
         result = index_security_catalog(self.settings)
-        self.assertEqual((result["modified"], result["unchanged"]), (1, 27))
+        self.assertEqual((result["modified"], result["unchanged"]), (1, 71))
 
     def test_absent_entry_is_retired_without_destroying_record(self):
         index_security_catalog(self.settings)
         self.catalog["entries"] = [x for x in self.catalog["entries"] if x["id"] != "MITRE-ATTACK"]
+        self.catalog["relations"] = [x for x in self.catalog["relations"] if "MITRE-ATTACK" not in (x["source"], x["target"])]
         self.save_catalog()
         self.assertEqual(index_security_catalog(self.settings)["retired"], 1)
         self.assertIsNone(get_security_entry(self.settings, "MITRE-ATTACK"))
@@ -82,7 +83,7 @@ class SecurityKnowledgeTests(unittest.TestCase):
         for variant in variants:
             self.catalog = variant; self.save_catalog()
             with self.assertRaises(ValueError): index_security_catalog(self.settings)
-            self.assertEqual(search_security(self.settings)["total"], 28)
+            self.assertEqual(search_security(self.settings)["total"], 72)
 
     def test_transaction_rolls_back_changed_entries_fts_and_metadata_on_relation_conflict(self):
         index_security_catalog(self.settings)
@@ -97,9 +98,9 @@ class SecurityKnowledgeTests(unittest.TestCase):
     def test_paging_filters_historical_and_zero_budget_are_explicit(self):
         index_security_catalog(self.settings)
         self.assertEqual(search_security(self.settings, edition_status="historical")["total"], 2)
-        self.assertEqual(search_security(self.settings, kind="control")["total"], 5)
+        self.assertEqual(search_security(self.settings, kind="control")["total"], 26)
         page = search_security(self.settings, limit=3, offset=3)
-        self.assertEqual((len(page["results"]), page["total"]), (3, 28))
+        self.assertEqual((len(page["results"]), page["total"]), (3, 72))
 
     def test_catalog_covers_identity_cloud_dfir_monitoring_and_platform_hardening(self):
         index_security_catalog(self.settings)

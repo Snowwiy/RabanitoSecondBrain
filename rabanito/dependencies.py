@@ -16,14 +16,17 @@ from urllib.parse import unquote
 from .config import Settings
 from .cyber.store import has_schema
 from .db import Database
+from .dependency_cache import annotate, digest as cache_digest, result_checksum, reuse_saved, validate_osv_schema
 from .indexer import DEFAULT_EXCLUDED_DIRS, _excluded_directory, _excluded_name, _existing_source_file
+from .pep440 import parse_version, public_version_key
+from .pylock import is_pylock_name
 from .utils import contains_reparse_component, iso_now, path_key, safe_relative
 
 
-ENGINE_VERSION = 2
+ENGINE_VERSION = 6
 ECOSYSTEMS = {"pypi": "PyPI", "npm": "npm", "maven": "Maven", "cargo": "crates.io", "nuget": "NuGet"}
 SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?\Z")
-VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+:_~-]{0,199}\Z")
+VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+!:_~-]{0,199}\Z")
 
 
 def _field(value: object, maximum: int = 500) -> str:
@@ -105,11 +108,8 @@ def semver_key(value: object) -> tuple | None:
 
 
 def python_release_key(value: object) -> tuple | None:
-    """PEP440 final numeric releases only; other forms remain unassessed."""
-    if not isinstance(value, str) or len(value) > 200 or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){0,7}", value):
-        return None
-    parts = [int(v) for v in value.split(".")]
-    return tuple(parts + [0] * (8 - len(parts)))
+    """PEP440 public ordering; downstream/local build applicability needs review."""
+    return public_version_key(value)
 
 
 def _ordered_range(version: str, interval: object, *, python_release: bool = False) -> bool | None:
@@ -158,9 +158,19 @@ def version_evidence(version: str, affected: dict) -> tuple[str, list[str]]:
     versions = affected.get("versions", [])
     if isinstance(versions, list) and version in versions:
         return "potentially_affected", ["explicit_affected_version"]
-    numeric = python_release_key(version) if affected.get("ecosystem") == "PyPI" else None
-    if numeric is not None and isinstance(versions, list) and any(python_release_key(v) == numeric for v in versions):
-        return "potentially_affected", ["pep440_numeric_release_equivalence"]
+    parsed = parse_version(version) if affected.get("ecosystem") == "PyPI" else None
+    if parsed is not None and parsed.has_local:
+        return "needs_review", ["local_build_applicability_not_verified"]
+    if parsed is not None and isinstance(versions, list):
+        # Same cardinality as the OSV normalizer. Never truncate silently and
+        # conclude outside a range when a later explicit equivalent may exist.
+        if len(versions) > 20000:
+            return "needs_review", ["oversized_affected_versions"]
+        for literal in versions:
+            equivalent = parse_version(literal)
+            if equivalent is not None and not equivalent.has_local and equivalent.key == parsed.key:
+                evidence = "pep440_numeric_release_equivalence" if parsed.numeric_final and equivalent.numeric_final else "pep440_public_version_equivalence"
+                return "potentially_affected", [evidence]
     ranges = affected.get("ranges", [])
     if not isinstance(ranges, list) or not ranges or len(ranges) > 100:
         return "needs_review", ["no_supported_complete_range"]
@@ -262,7 +272,7 @@ def _authorized_file(settings: Settings, project: str, relative: str, kind: str)
         raise ValueError("inventory_requires_safe_relative_path")
     filename = parts[-1].casefold()
     if (kind == "sbom" and not value.lower().endswith(".json") or kind == "manifest" and
-            not (filename == "package-lock.json" or re.fullmatch(r"requirements(?:[-_.][a-z0-9_-]+)?\.txt", filename))):
+            not (filename in {"package-lock.json", "uv.lock"} or is_pylock_name(filename) or re.fullmatch(r"requirements(?:[-_.][a-z0-9_-]+)?\.txt", filename))):
         raise ValueError("unsupported_inventory_filename")
     if not settings.database_path.is_file():
         raise ValueError("project_inventory_unavailable")
@@ -281,7 +291,8 @@ def _authorized_file(settings: Settings, project: str, relative: str, kind: str)
     excluded_dirs = DEFAULT_EXCLUDED_DIRS | {str(x).casefold() for x in policy.get("exclude_dirs", [])}
     excluded_dirs |= {"private", "confidential", "confidencial", "privado", "privados"}
     excluded_names = {str(x).casefold() for x in policy.get("exclude_names", [])}
-    if any(_excluded_directory(p, excluded_dirs) or _excluded_name(Path(p), excluded_names) for p in parts):
+    if (Path(value).suffix.casefold() in {str(x).casefold() for x in policy.get("exclude_extensions", [])}
+            or any(_excluded_directory(p, excluded_dirs) or _excluded_name(Path(p), excluded_names) for p in parts)):
         raise ValueError("sbom_path_excluded")
     target = root / Path(*parts)
     if any(r["project_id"] != selected["project_id"] and safe_relative(target, Path(r["root_path"])) is not None
@@ -321,11 +332,40 @@ def inspect_inventory(settings: Settings, project: str, relative_path: str, *, k
     after = path.stat()
     if len(content) > max_bytes or (before.st_size, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino):
         raise ValueError("sbom_changed_during_read")
+    digest = hashlib.sha256(content).hexdigest()
+    # Bind lookup to a read snapshot of the same bounded OSV prefix used by
+    # evaluation. Metadata first avoids JSON parsing/version matching on hits.
+    with Database(settings.database_path, read_only=True) as db:
+        db.execute("BEGIN")
+        metadata, byte_count, total = [], 0, 0
+        if has_schema(db):
+            validate_osv_schema(db)
+            total = db.one("SELECT count(*) FROM cyber_records WHERE source='osv' AND active=1")[0]
+            for item in db.execute("SELECT source_id,fingerprint,retrieved_at,length(CAST(data_json AS BLOB)) bytes "
+                                   "FROM cyber_records WHERE source='osv' AND active=1 ORDER BY source_id LIMIT ?", (max_advisories,)):
+                byte_count += item["bytes"]
+                if byte_count > 32 * 1024 * 1024:
+                    break
+                metadata.append((item["source_id"], item["fingerprint"], item["retrieved_at"], item["bytes"]))
+        signature = cache_digest([ENGINE_VERSION, kind, selected["project_id"], path_key(selected["root_path"]),
+                                  selected["name"], relative, digest, total, metadata, config, settings.policy("projects")])
+        cached = reuse_saved(db, signature, selected, kind, relative, digest, ENGINE_VERSION)
+        if cached is not None:
+            return cached
+        # Keep raw rows inside this snapshot; a concurrent OSV publication
+        # cannot produce metadata from one revision and bodies from another.
+        rows = db.query("SELECT data_json FROM cyber_records WHERE source='osv' AND active=1 ORDER BY source_id LIMIT ?", (len(metadata),)) if metadata else []
     try:
         decoded = content.decode("utf-8-sig")
         ignored = 0
         if kind == "manifest" and path.suffix.casefold() == ".txt":
             format_name, components, duplicates, ignored = _requirements(decoded, max_components)
+        elif kind == "manifest" and path.name.casefold() == "uv.lock":
+            from .uv_lock import parse_uv_lock
+            format_name, components, duplicates, ignored = parse_uv_lock(decoded, max_components)
+        elif kind == "manifest" and is_pylock_name(path.name):
+            from .pylock import parse_pylock
+            format_name, components, duplicates, ignored = parse_pylock(decoded, max_components)
         else:
             payload = json.loads(decoded, object_pairs_hook=_no_duplicates,
                                  parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite_json")))
@@ -337,24 +377,16 @@ def inspect_inventory(settings: Settings, project: str, relative_path: str, *, k
         raise ValueError("malformed_sbom_json") from exc
     requested = {package_key(c["ecosystem"], c["name"]) for c in components if not c["identity_issue"]}
     observations = defaultdict(list)
-    fingerprints, examined, total, byte_count, latest = [], 0, 0, 0, None
-    with Database(settings.database_path, read_only=True) as db:
-        if has_schema(db):
-            total = db.one("SELECT count(*) AS n FROM cyber_records WHERE source='osv' AND active=1")["n"]
-            for row in db.execute("SELECT source_id,fingerprint,data_json,retrieved_at FROM cyber_records WHERE source='osv' AND active=1 ORDER BY source_id LIMIT ?", (max_advisories,)):
-                byte_count += len(row["data_json"].encode("utf-8"))
-                if byte_count > 32 * 1024 * 1024:
-                    break
-                examined += 1
-                fingerprints.append(row["source_id"] + ":" + row["fingerprint"])
-                latest = max(latest or "", row["retrieved_at"])
-                record = json.loads(row["data_json"])
-                if record.get("record_status") != "published":
-                    continue
-                for index, affected in enumerate(record.get("affected", [])[:500]):
-                    key = package_key(affected.get("ecosystem", ""), affected.get("package", ""))
-                    if key and key in requested:
-                        observations[key].append((record, index, affected))
+    examined = len(metadata)
+    latest = max((item[2] for item in metadata), default=None)
+    for row in rows:
+        record = json.loads(row["data_json"])
+        if record.get("record_status") != "published":
+            continue
+        for index, affected in enumerate(record.get("affected", [])[:500]):
+            key = package_key(affected.get("ecosystem", ""), affected.get("package", ""))
+            if key and key in requested:
+                observations[key].append((record, index, affected))
     findings, truncated = [], False
     for component in components:
         key = package_key(component["ecosystem"], component["name"])
@@ -380,10 +412,7 @@ def inspect_inventory(settings: Settings, project: str, relative_path: str, *, k
             component["assessment"] = "needs_review"
         if matches and not statuses:
             component["assessment"] = "needs_review"
-    digest = hashlib.sha256(content).hexdigest()
-    signature = hashlib.sha256(json.dumps([ENGINE_VERSION, kind, selected["project_id"], relative, digest, fingerprints, config],
-                                         sort_keys=True, ensure_ascii=True).encode()).hexdigest()
-    return {"engine_version": ENGINE_VERSION, "analysis_id": signature, "analyzed_at": iso_now(),
+    report = {"engine_version": ENGINE_VERSION, "analysis_id": signature, "analyzed_at": iso_now(),
             "project": selected["name"], "source": {"relative_path": relative, "sha256": digest, "format": format_name},
             "coverage": {"mode": "local_osv_only", "total_local_observations": total, "examined": examined,
                          "local_snapshot_complete": examined == total, "latest_retrieved_at": latest,
@@ -392,6 +421,15 @@ def inspect_inventory(settings: Settings, project: str, relative_path: str, *, k
                          "scope": "declared_inventory_not_installed_state; no_match_does_not_mean_safe; not_full_schema_validation"},
             "component_count": len(components), "duplicates_removed": duplicates,
             "summary": dict(Counter(c["assessment"] for c in components)), "components": components, "findings": findings}
+    if kind == "manifest" and path.name.casefold() == "uv.lock":
+        report["coverage"]["selection"] = "all_lock_entries; markers_extras_groups_and_installed_environment_not_evaluated"
+        report["coverage"]["identity"] = "declared_public_pypi_only; custom_registry_git_url_path_and_workspace_unverified"
+    if kind == "manifest" and is_pylock_name(path.name):
+        report["coverage"]["selection"] = "all_pylock_entries; markers_groups_extras_python_and_wheel_compatibility_not_evaluated"
+        report["coverage"]["identity"] = "declared_public_pypi_artifacts_only; indexes_paths_vcs_and_archives_not_assumed_equivalent"
+        report["coverage"]["artifacts"] = "metadata_only; no_download_no_hash_verification_no_attestation_verification"
+    report["result_sha256"] = result_checksum(report)
+    return annotate(report, "computed")
 
 
 def inspect_sbom(settings: Settings, project: str, relative_path: str) -> dict:

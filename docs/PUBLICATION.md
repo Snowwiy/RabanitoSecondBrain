@@ -11,7 +11,17 @@ Git versiona software y documentación publicable, no conocimiento del usuario. 
 5. Ejecuta pruebas y un smoke desde un checkout limpio, sin configuración privada; comprueba Skills, catálogo y ejemplo.
 6. Verifica destino/rama y cambios remotos. No uses force push. Tras publicar, compara `HEAD` con `refs/heads/main` y verifica el árbol recibido.
 
-La autorización actual cubre un único commit/push inicial. No se automatizan publicaciones adicionales.
+El respaldo inicial y cada publicación posterior requieren autorización humana
+específica. La solicitud de publicar el estado actual autoriza un commit y push
+adicionales a main, no una cadencia de publicaciones ni un merge de Frontend-Design.
+Después de verificar ese push, los avances siguientes vuelven a quedar locales
+hasta una nueva autorización. No usar force push ni alterar otras ramas.
+
+La visibilidad real debe comprobarse, no deducirse de una descripción histórica.
+La publicación del estado acumulado fue autorizada expresamente en repositorio
+público tras advertir esa condición. Esto no autoriza distribuir memoria privada,
+relajar exclusiones ni añadir una licencia al código. El repositorio no requiere
+notas ni bases operativas para ejecutar sus pruebas.
 
 ## Límites y recuperación
 

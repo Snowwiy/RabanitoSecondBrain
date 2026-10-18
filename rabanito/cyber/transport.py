@@ -19,6 +19,7 @@ ALLOWED_ENDPOINTS = {
     "services.nvd.nist.gov": ("/rest/json/cves/2.0",),
     "api.first.org": ("/data/v1/epss",),
     "api.osv.dev": ("/v1/vulns/",),
+    "api.msrc.microsoft.com": ("/cvrf/v3.0/updates/",),
 }
 
 
@@ -55,6 +56,11 @@ def validate_endpoint(url: str) -> str:
         identifier(parsed.path.removeprefix("/v1/vulns/"))
         if parsed.query:
             raise ValueError("OSV lookup does not accept query parameters")
+    if parsed.hostname == "api.msrc.microsoft.com":
+        from .msrc import MONTH
+        if (not MONTH.fullmatch(parsed.path.removeprefix("/cvrf/v3.0/updates/"))
+                or parsed.query != "api-version=2023-11-01"):
+            raise ValueError("MSRC requires one explicit public month and API version")
     return parsed.hostname or ""
 
 

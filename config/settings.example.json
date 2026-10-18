@@ -24,6 +24,7 @@
     "nvd_initial_days": 1,
     "nvd_window_minutes": 60,
     "epss_target_limit": 100,
+    "msrc_capture_seconds": 300,
     "osv_ids": [],
     "cadence": {
       "enabled": false,

@@ -37,10 +37,17 @@ def _bound(config: dict, key: str, default: int, minimum: int, maximum: int) -> 
 
 
 def sync_source(settings: Settings, source: str, ids: list[str] | None = None, *, client=None,
-                now: datetime | None = None) -> dict:
+                now: datetime | None = None, month: str | None = None, capture_manifest: str | None = None) -> dict:
     """Fetch only public identifiers and windows. One atomic transaction per complete source scope."""
     if source not in SOURCES:
         raise ValueError("Unknown Cyber source")
+    if source == "msrc":
+        if ids is not None and ids != []:
+            raise ValueError("MSRC requires a month, not vulnerability identifiers")
+        from .msrc_sync import sync_month
+        return sync_month(settings, month, capture_manifest=capture_manifest, client=client, now=now)
+    if month is not None or capture_manifest is not None:
+        raise ValueError("Month and capture apply only to MSRC")
     if ids is not None and (not isinstance(ids, list) or len(ids) > 200):
         raise ValueError("At most 200 public vulnerability identifiers are allowed")
     requested = list(dict.fromkeys(identifier(x) for x in (ids or [])))

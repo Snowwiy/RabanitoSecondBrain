@@ -4,6 +4,7 @@ import json
 import ipaddress
 import os
 import re
+import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -13,13 +14,17 @@ from .capabilities import build_link_suggestions, dashboard_audit, dashboard_aud
 from .changes import recent_document_changes
 from .config import SETTINGS_WRITE_LOCK, Settings, save_settings
 from .cyber import cyber_status, get_vulnerability, search_vulnerabilities, sync_source
+from .cyber.history import vulnerability_history
 from .coding_memory import recurring_patterns, similar_experiences
+from .documented_memory import documented_experiences
+from .document_content import DocumentContentError, document_content
 from .db import Database
 from .decisions import list_memory_records
 from .graph import graph_edges_for_nodes, graph_suggestion_edges
 from .indexer import index_all, set_additional_source_enabled_and_sync
 from .onboard import approve_source, preview_source
 from .public_graph import public_graph
+from .knowledge_graph import graph_neighbors, graph_page, sync_graph
 from .security import get_security_entry, search_security
 from .search import (
     SCAN_SOURCE_SUMMARY_MAX_CHARS, get_document, project_scan_summary, recent_documents, related_documents,
@@ -47,6 +52,83 @@ class RabanitoHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(raw)
+
+    def _document_content_request(self, parsed) -> None:
+        # Isolated parsing keeps the established API contracts unchanged.
+        self.close_connection = True
+        body_consumed = False
+        def reject(code, status):
+            # On Windows, closing with an unread small request body can reset the
+            # connection before its structured error reaches the client. Drain
+            # only unambiguous, bounded framing; never consume an oversized body.
+            lengths = self.headers.get_all("Content-Length", [])
+            if (not body_consumed and len(lengths) == 1 and re.fullmatch(r"[0-9]{1,10}", lengths[0])
+                    and 0 < int(lengths[0]) <= 2048 and not self.headers.get_all("Transfer-Encoding", [])):
+                previous_timeout = self.connection.gettimeout()
+                try:
+                    self.connection.settimeout(1)
+                    self.rfile.read(int(lengths[0]))
+                except OSError:
+                    pass
+                finally:
+                    self.connection.settimeout(previous_timeout)
+            self._json({"error": code}, status)
+        try:
+            if parsed.query or parsed.params or parsed.fragment:
+                raise DocumentContentError(400, "json_body_required")
+            if (len(self.headers.get_all("Host", [])) != 1
+                    or len(self.headers.get_all("Origin", [])) != 1
+                    or not _request_host_is_loopback(self.headers.get("Host", ""), self.server.server_address[1])):
+                raise DocumentContentError(403, "same_origin_required")
+            try:
+                origin = urlsplit(self.headers["Origin"])
+                host = urlsplit("http://" + self.headers["Host"])
+                valid_origin = (origin.scheme == "http" and not origin.username and not origin.password
+                    and not origin.path and not origin.query and not origin.fragment
+                    and _is_loopback_host(origin.hostname or "") and origin.hostname == host.hostname
+                    and origin.port == host.port == self.server.server_address[1])
+            except ValueError:
+                valid_origin = False
+            if not valid_origin:
+                raise DocumentContentError(403, "same_origin_required")
+            if (len(self.headers.get_all("Content-Type", [])) != 1
+                    or self.headers["Content-Type"].split(";", 1)[0].strip().casefold() != "application/json"):
+                raise DocumentContentError(403, "json_content_type_required")
+            lengths = self.headers.get_all("Content-Length", [])
+            if (len(lengths) != 1 or not re.fullmatch(r"[0-9]{1,10}", lengths[0])
+                    or self.headers.get_all("Transfer-Encoding", [])):
+                raise DocumentContentError(400, "invalid_request_framing")
+            length = int(lengths[0])
+            if length > 2048:
+                raise DocumentContentError(413, "request_size_limit")
+            if not length:
+                raise DocumentContentError(400, "invalid_document_request")
+            old_timeout = self.connection.gettimeout()
+            try:
+                self.connection.settimeout(3)
+                body_consumed = True
+                body = self.rfile.read(length)
+            finally:
+                self.connection.settimeout(old_timeout)
+            if len(body) != length:
+                raise DocumentContentError(400, "incomplete_request_body")
+            def unique_fields(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError("duplicate_key")
+                    result[key] = value
+                return result
+            payload = json.loads(body.decode("utf-8"), object_pairs_hook=unique_fields)
+            if not isinstance(payload, dict) or set(payload) != {"document_id", "max_bytes"}:
+                raise DocumentContentError(400, "invalid_document_request")
+            self._json(document_content(self.settings, payload["document_id"], payload["max_bytes"]))
+        except DocumentContentError as exc:
+            reject(exc.code, exc.status)
+        except (UnicodeError, ValueError, TypeError, RecursionError):
+            reject("invalid_document_request", 400)
+        except OSError:
+            reject("document_request_unavailable", 409)
 
     def _project_root_for_id(self, value: object) -> str | None:
         if value in (None, ""):
@@ -157,7 +239,16 @@ class RabanitoHandler(BaseHTTPRequestHandler):
         path = parsed.path
         query = parse_qs(parsed.query)
         try:
-            if path in {"/api/search", "/api/context", "/api/decisions", "/api/graph", "/api/cyber/search", "/api/cyber/get", "/api/cyber/sync", "/api/security/search", "/api/security/get", "/api/coding/similar", "/api/coding/patterns"}:
+            if path == "/api/doc/content":
+                self._json({"error": "post_json_required"}, 405)
+                return
+            if path == "/api/coding/documented":
+                self._json({"error": "POST JSON required for private filters"}, 405)
+                return
+            if path.startswith("/api/attack/"):
+                self._json({"error": "POST JSON required"}, 405)
+                return
+            if path in {"/api/search", "/api/context", "/api/decisions", "/api/graph", "/api/cyber/search", "/api/cyber/get", "/api/cyber/sync", "/api/cyber/history", "/api/security/search", "/api/security/get", "/api/coding/similar", "/api/coding/patterns", "/api/knowledge-graph", "/api/knowledge-graph/neighbors", "/api/knowledge-graph/sync"}:
                 self._json({"error": "POST JSON required for private filters"}, 405)
                 return
             if path in {"/", "/index.html"}:
@@ -407,17 +498,24 @@ class RabanitoHandler(BaseHTTPRequestHandler):
             self._json({"error": f"request failed: {type(exc).__name__}"}, 400)
 
     def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/doc/content":
+            self._document_content_request(parsed)
+            return
         if not _request_host_is_loopback(self.headers.get("Host", ""), self.server.server_address[1]):
             self._json({"error": "loopback Host required"}, 403)
             return
-        parsed = urlparse(self.path)
         if parsed.path not in {
             "/api/index", "/api/audit", "/api/link", "/api/project-exclusion",
             "/api/source-preview", "/api/source-approve", "/api/source-impact", "/api/source-toggle",
             "/api/search", "/api/context", "/api/decisions", "/api/graph",
-            "/api/cyber/search", "/api/cyber/get", "/api/cyber/sync",
+            "/api/cyber/search", "/api/cyber/get", "/api/cyber/sync", "/api/cyber/history",
             "/api/security/search", "/api/security/get",
+            "/api/attack/status", "/api/attack/search", "/api/attack/get", "/api/attack/context",
+            "/api/attack/relations", "/api/attack/history",
             "/api/coding/similar", "/api/coding/patterns",
+            "/api/coding/documented",
+            "/api/knowledge-graph", "/api/knowledge-graph/neighbors", "/api/knowledge-graph/sync",
         } and not parsed.path.startswith("/api/open/"):
             self._json({"error": "not found"}, 404)
             return
@@ -435,15 +533,27 @@ class RabanitoHandler(BaseHTTPRequestHandler):
             )
         except ValueError:
             same_loopback_origin = False
-        max_body_length = 16_384 if parsed.path in {"/api/search", "/api/context", "/api/decisions", "/api/graph"} else 2048
+        max_body_length = 16_384 if parsed.path in {"/api/search", "/api/context", "/api/decisions", "/api/graph", "/api/knowledge-graph", "/api/knowledge-graph/neighbors"} else 2048
         if not same_loopback_origin or content_type != "application/json" or not 0 <= content_length <= max_body_length:
             self._json({"error": "same-origin JSON request required"}, 403)
             return
         try:
-            payload = json.loads(self.rfile.read(content_length) or b"{}")
+            def unique_graph_fields(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError("duplicate_graph_json_key")
+                    result[key] = value
+                return result
+            raw_payload = self.rfile.read(content_length) or b"{}"
+            payload = json.loads(raw_payload, object_pairs_hook=unique_graph_fields) if parsed.path.startswith(("/api/knowledge-graph", "/api/attack/")) or parsed.path == "/api/coding/documented" else json.loads(raw_payload)
             if not isinstance(payload, dict):
                 raise ValueError("JSON object required")
-            if parsed.path == "/api/index":
+            if parsed.path.startswith("/api/knowledge-graph"):
+                self._knowledge_graph(parsed.path, payload)
+            elif parsed.path.startswith("/api/attack/"):
+                self._attack_query(parsed.path, payload)
+            elif parsed.path == "/api/index":
                 self._json(self._dashboard_scan_summary(index_all(self.settings)))
             elif parsed.path == "/api/cyber/search":
                 kev_only = payload.get("kev", False)
@@ -452,6 +562,11 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                 self._json(search_vulnerabilities(self.settings, payload.get("q", ""), source=payload.get("source") or None,
                     kev_only=kev_only, limit=int(payload.get("limit", 20)), offset=int(payload.get("offset", 0)),
                     since=payload.get("since") or None, min_epss=payload.get("min_epss"), sort=payload.get("sort", "risk")))
+            elif parsed.path == "/api/coding/documented":
+                if set(payload) - {"q", "context", "technology", "limit", "max_chars"}:
+                    raise ValueError("unknown_documented_memory_fields")
+                self._json(documented_experiences(self.settings, payload.get("q", ""), context=payload.get("context"),
+                    technology=payload.get("technology"), limit=payload.get("limit", 5), max_chars=payload.get("max_chars", 6000)))
             elif parsed.path == "/api/coding/similar":
                 self._json(similar_experiences(self.settings, payload.get("q", ""), project=payload.get("project") or None,
                     technology=payload.get("technology") or None, limit=payload.get("limit", 5), max_chars=payload.get("max_chars", 6000)))
@@ -460,20 +575,27 @@ class RabanitoHandler(BaseHTTPRequestHandler):
             elif parsed.path == "/api/security/search":
                 self._json(search_security(self.settings, payload.get("q", ""), framework=payload.get("framework") or None,
                     kind=payload.get("kind") or None, edition_status=payload.get("status") or None,
-                    limit=int(payload.get("limit", 20)), offset=int(payload.get("offset", 0))))
+                    release=payload.get("release"),
+                    limit=int(payload.get("limit", 20)), offset=int(payload.get("offset", 0)),level=payload.get('level')))
             elif parsed.path == "/api/security/get":
                 result = get_security_entry(self.settings, payload.get("id", ""))
                 self._json(result or {"error": "not found locally"}, 200 if result else 404)
             elif parsed.path == "/api/cyber/get":
                 result = get_vulnerability(self.settings, payload.get("id", ""))
                 self._json(result or {"error": "not found locally"}, 200 if result else 404)
+            elif parsed.path == "/api/cyber/history":
+                self._json(vulnerability_history(self.settings, payload.get("id", ""), source=payload.get("source"),
+                                                limit=payload.get("limit", 20), before=payload.get("before")))
             elif parsed.path == "/api/cyber/sync":
                 if payload.get("confirm_public_sync") is not True:
                     raise ValueError("Explicit public synchronization is required")
                 values = payload.get("ids")
                 if values is not None and (not isinstance(values, list) or len(values) > 1):
                     raise ValueError("Dashboard sync accepts one public identifier")
-                self._json(sync_source(self.settings, payload.get("source", ""), values))
+                if "capture" in payload or "capture_manifest" in payload:
+                    raise ValueError("Capture replay is CLI-only")
+                options = {"month": payload["month"]} if "month" in payload else {}
+                self._json(sync_source(self.settings, payload.get("source", ""), values, **options))
             elif parsed.path == "/api/audit":
                 self._json(dashboard_audit_view(write_audit(self.settings)))
             elif parsed.path == "/api/link":
@@ -611,8 +733,59 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                 self._open_document(int(parsed.path.rsplit("/", 1)[1]))
         except TimeoutError as exc:
             self._json({"error": str(exc)}, 409)
-        except (ValueError, TypeError, RecursionError, OSError, json.JSONDecodeError) as exc:
-            self._json({"error": f"request failed: {type(exc).__name__}"}, 400)
+        except (ValueError, TypeError, RecursionError, OSError, sqlite3.Error, json.JSONDecodeError) as exc:
+            message = str(exc) if parsed.path.startswith("/api/knowledge-graph") and re.fullmatch(r"[a-z_]{1,100}", str(exc)) else f"request failed: {type(exc).__name__}"
+            self._json({"error": message}, 400)
+
+    def _attack_query(self, path: str, payload: dict) -> None:
+        from .attack_query import attack_status, search_attack, get_attack_object, attack_context, attack_relations, attack_history
+        action = path.removeprefix("/api/attack/")
+        allowed = {
+            "status": {"domain"},
+            "search": {"q", "domain", "release", "kind", "include_inactive", "limit", "offset"},
+            "get": {"id", "domain", "release", "kind"},
+            "context": {"q", "domain", "release", "kind", "include_inactive", "limit", "max_chars"},
+            "relations": {"id", "domain", "release", "direction", "include_inactive", "limit", "offset"},
+            "history": {"id", "domain", "limit", "before"},
+        }
+        if action not in allowed or set(payload) - allowed[action]:
+            raise ValueError("unsupported_attack_query_fields")
+        options = {k: v for k, v in payload.items() if k not in {"q", "id"}}
+        if action == "status":
+            result = attack_status(self.settings, **options)
+        elif action == "search":
+            result = search_attack(self.settings, payload.get("q", ""), **options)
+        elif action == "get":
+            result = get_attack_object(self.settings, payload.get("id"), **options)
+        elif action == "context":
+            result = attack_context(self.settings, payload.get("q"), **options)
+        elif action == "relations":
+            result = attack_relations(self.settings, payload.get("id"), **options)
+        else:
+            result = attack_history(self.settings, payload.get("id"), **options)
+        self._json(result, 404 if action == "get" and not result["matches"] else 200)
+
+    def _knowledge_graph(self, path: str, payload: dict) -> None:
+        if path.endswith("/sync"):
+            if set(payload) - {"confirm_graph_sync", "max_inputs", "max_bytes"} or payload.get("confirm_graph_sync") is not True:
+                raise ValueError("explicit_graph_sync_required")
+            self._json(sync_graph(self.settings, max_inputs=payload.get("max_inputs", 1000), max_bytes=payload.get("max_bytes", 32 * 1024 * 1024)))
+            return
+        allowed = {"kind", "q", "category", "project", "project_id", "source", "risk", "since", "until", "limit", "cursor", "suggestions", "include_inactive"}
+        neighbors = path.endswith("/neighbors")
+        if neighbors:
+            allowed |= {"id", "suggestions"}
+        if set(payload) - allowed or "project" in payload and "project_id" in payload:
+            raise ValueError("invalid_graph_request_fields")
+        options = {key: value for key, value in payload.items() if key not in {"q", "project_id", "id", "suggestions"}}
+        if "q" in payload:
+            options["query"] = payload["q"]
+        if "project_id" in payload:
+            if type(payload["project_id"]) is not int:
+                raise ValueError("invalid_graph_project")
+            options["project"] = payload["project_id"]
+        self._json(graph_neighbors(self.settings, payload.get("id"), suggestions=payload.get("suggestions", False), **options)
+                   if neighbors else graph_page(self.settings, suggestions=payload.get("suggestions", False), **options))
 
     def _graph(self, query: dict[str, list[str]]) -> None:
         domain = query.get("domain", ["documents"])[0]

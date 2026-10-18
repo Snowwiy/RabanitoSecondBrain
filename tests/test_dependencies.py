@@ -77,15 +77,15 @@ class DependencyTests(unittest.TestCase):
         self.write([component(kind="npm")])
         self.assertEqual(self.inspect()["summary"], {"no_local_advisory": 1})
 
-    def test_unsupported_python_prerelease_and_missing_version_require_review(self):
+    def test_python_prerelease_is_ordered_but_missing_version_requires_review(self):
         self.seed()
         missing = component()
         missing.pop("version")
         missing["purl"] = "pkg:pypi/parser"
         self.write([component(version="1.8rc1"), missing])
         report = self.inspect()
-        self.assertEqual(report["summary"], {"needs_review": 2})
-        self.assertEqual(report["findings"][0]["evidence"], ["unsupported_or_invalid_version_range"])
+        self.assertEqual(report["summary"], {"potentially_affected": 1, "needs_review": 1})
+        self.assertEqual(report["findings"][0]["evidence"], ["osv_supported_version_interval"])
 
     def test_identity_conflicts_never_emit_positive_matches(self):
         self.seed()
@@ -233,13 +233,13 @@ class DependencyTests(unittest.TestCase):
         self.assertNotIn("secret-sentinel", json.dumps(report))
         self.assertNotIn("example.invalid", json.dumps(report))
 
-    def test_requirements_markers_wildcards_and_prereleases_do_not_claim_known_applicability(self):
+    def test_requirements_markers_wildcards_need_review_and_prerelease_is_a_candidate(self):
         self.seed()
         path = self.project / "requirements-dev.txt"
         path.write_text('parser==1.0; python_version < "3.10"\nparser==1.*\nparser==1.8rc1\n', encoding="utf-8")
         report = inspect_manifest(self.settings, self.project.name, path.name)
-        self.assertEqual(report["summary"], {"needs_review": 3})
-        self.assertFalse(any(f["assessment"] == "potentially_affected" for f in report["findings"]))
+        self.assertEqual(report["summary"], {"needs_review": 2, "potentially_affected": 1})
+        self.assertEqual(report["findings"][0]["component_pointer"], "line:3")
 
     def test_npm_lockfiles_support_transitive_scopes_dedupe_and_do_not_emit_resolved_credentials(self):
         payload = osv()
@@ -305,12 +305,14 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(python_release_key("1.0"), python_release_key("1.0.0"))
         self.assertLess(python_release_key("1.9"), python_release_key("1.10"))
         self.assertEqual(python_release_key("01.0"), python_release_key("1"))
-        for unknown in ("1.0rc1", "1!1.0", "1.0+private", "1.0.post1", "1.0.dev1"):
+        for unknown in ("1.0+private", "1.0legacy", "1..0", "1.0.*"):
             self.assertIsNone(python_release_key(unknown))
+        for known in ("1.0rc1", "1!1.0", "1.0.post1", "1.0.dev1"):
+            self.assertIsNotNone(python_release_key(known))
         affected = {"ecosystem": "PyPI", "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "1.9"}, {"fixed": "1.10"}]}]}
         self.assertEqual(version_evidence("1.9.0", affected)[0], "potentially_affected")
         self.assertEqual(version_evidence("1.10", affected)[0], "outside_observed_ranges")
-        self.assertEqual(version_evidence("1.9rc1", affected)[0], "needs_review")
+        self.assertEqual(version_evidence("1.9rc1", affected)[0], "outside_observed_ranges")
         self.assertEqual(version_evidence("1.0.0", {"ecosystem": "PyPI", "versions": ["1.0"]})[1], ["pep440_numeric_release_equivalence"])
     def test_semver_ordering_prerelease_and_build_metadata(self):
         ordered = ["1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta", "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "2.0.0"]

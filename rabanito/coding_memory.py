@@ -54,7 +54,8 @@ def _evidence(settings: Settings, root: Path, values: object, projects: list[dic
     return _safe_evidence_refs(settings, root, allowed)
 
 
-def _verified_records(settings: Settings, query: str, project: str | None, technology: str | None) -> tuple[list[dict], dict]:
+def _verified_records(settings: Settings, query: str, project: str | None, technology: str | None,
+                      *, document_id: int | None = None) -> tuple[list[dict], dict]:
     coverage = {"candidate_limit": 200, "candidates_examined": 0, "candidate_limit_reached": False,
                 "stale_or_unverifiable_skipped": 0, "byte_budget_reached": False, "mode": "local_lexical_recorded_validation"}
     if not settings.database_path.is_file():
@@ -67,6 +68,11 @@ def _verified_records(settings: Settings, query: str, project: str | None, techn
                   f"json_extract({fm},'$.record_type') IN ('decision','fact')", "p.status='active'",
                   f"rabanito_project_visible('internal',p.name,{root_sql})=1"]
     params = [path_key(settings.knowledge_root)]
+    if document_id is not None:
+        if type(document_id) is not int or document_id <= 0:
+            raise ValueError("invalid_coding_document_id")
+        conditions.append("d.document_id=?")
+        params.append(document_id)
     if project is not None:
         if not isinstance(project, str) or not project.strip():
             raise ValueError("invalid_coding_memory_project")

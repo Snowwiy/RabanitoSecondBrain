@@ -78,7 +78,7 @@ def public_graph(settings: Settings, domain: str, *, limit: int = 250, query: st
     for item in found["results"]:
         key = domain + ":" + item["id"]
         roots.append((item, add_node(key, item["id"] if domain == "cyber" else item["title"],
-                     "vulnerability" if domain == "cyber" else item["kind"],
+                      item.get("record_kind", "vulnerability") if domain == "cyber" else item["kind"],
                      reference=item.get("source_url"), summary=item.get("description", item.get("summary", "")),
                      modified=item.get("modified", item.get("reviewed_on")))))
     if domain == "cyber":

@@ -43,7 +43,8 @@ class PythonCompatibilityTests(unittest.TestCase):
             path
             for root in source_roots
             for path in root.rglob("*.py")
-            if "__pycache__" not in path.parts and ".test-temp" not in path.parts
+            if "__pycache__" not in path.relative_to(PROJECT_ROOT).parts
+            and ".test-temp" not in path.relative_to(PROJECT_ROOT).parts
         )
         self.assertTrue(files, "Expected Python source files to validate")
         failures: list[str] = []
