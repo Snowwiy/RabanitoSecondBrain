@@ -19,7 +19,7 @@ The authorized Markdown reader and typed Knowledge Graph are integrated in this 
 
 ## Future PR compatibility assessment (read-only, 2026-10-20)
 
-- Audited refs: merge base `4474bfc91bcc8145b1573dfa36831c5626c5fd76`, `origin/main` `5109981a794a41bb7b646beca61ad11045f18ea5`, `origin/Frontend-Design` `6a6cd05e1a310a9d609a0015309705f01c37bc50`.
+- Audited refs: merge base `4474bfc91bcc8145b1573dfa36831c5626c5fd76`, `origin/main` `5109981a794a41bb7b646beca61ad11045f18ea5`, functional `Frontend-Design` phase `6a6cd05e1a310a9d609a0015309705f01c37bc50`; the same simulation was repeated after docs checkpoint `6c5972b6b63cbcee449a076fb9fce12a591f4485`.
 - `git merge-tree --write-tree origin/main origin/Frontend-Design` reported six conflict paths without modifying the worktree: `FRONTEND_BACKEND_CONTRACT.md` (add/add), `docs/API_CONTRACT.md` (content), `rabanito/cli.py` (content), `rabanito/knowledge_graph/query.py` (add/add), `rabanito/server.py` (content), and `tests/test_knowledge_graph.py` (add/add). Other paths auto-merged in the simulation.
 - The CLI overlap is substantial: the main-side file contains many backend commands/features absent from this branch, so retaining the entire frontend side risks deleting them. The server must preserve the main backend routes/security changes and the reader plus typed graph routes. The query and graph-test conflicts are narrower, reflecting the frontend proof optimization and its test updates. Reconcile both contracts and each file deliberately; do not resolve by choosing an entire side.
 - This is a compatibility assessment only. Re-run against current refs before future PR preparation. It does not authorize opening a PR or performing a merge.

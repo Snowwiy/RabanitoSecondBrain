@@ -12,8 +12,8 @@
 
 ## Future integration assessment — do not merge yet
 
-- Audited refs: `origin/main` `5109981a794a41bb7b646beca61ad11045f18ea5`; `origin/Frontend-Design` `6a6cd05e1a310a9d609a0015309705f01c37bc50`. Merge base: `4474bfc91bcc8145b1573dfa36831c5626c5fd76`.
-- A read-only `git merge-tree --write-tree origin/main origin/Frontend-Design` simulation at the published head found six conflict paths: `FRONTEND_BACKEND_CONTRACT.md` (add/add), `docs/API_CONTRACT.md` (content), `rabanito/cli.py` (content), `rabanito/knowledge_graph/query.py` (add/add), `rabanito/server.py` (content), and `tests/test_knowledge_graph.py` (add/add). No merge was run.
+- Audited refs: `origin/main` `5109981a794a41bb7b646beca61ad11045f18ea5`; functional phase `6a6cd05e1a310a9d609a0015309705f01c37bc50`; docs/checkpoint head rechecked at `6c5972b6b63cbcee449a076fb9fce12a591f4485`. Merge base: `4474bfc91bcc8145b1573dfa36831c5626c5fd76`.
+- A read-only `git merge-tree --write-tree origin/main origin/Frontend-Design` simulation at the functional head, repeated after the docs checkpoint, found the same six conflict paths: `FRONTEND_BACKEND_CONTRACT.md` (add/add), `docs/API_CONTRACT.md` (content), `rabanito/cli.py` (content), `rabanito/knowledge_graph/query.py` (add/add), `rabanito/server.py` (content), and `tests/test_knowledge_graph.py` (add/add). No merge was run.
 - The CLI/server overlaps are substantial: `main` contains additional backend commands and routes. A future PR must preserve those along with the frontend reader route, typed graph routes, main performance/security behavior and both test suites. The query conflict currently represents the frontend's bounded performance proof adjustment; the graph test conflict is limited to proof/test updates. Manual, file-by-file reconciliation is required; do not select one whole branch.
 - This report is an assessment, not a merge or PR. Repeat the simulation against current refs before PR preparation and review any new backend commits and exact conflicts then.
 
