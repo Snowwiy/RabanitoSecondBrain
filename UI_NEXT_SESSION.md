@@ -20,7 +20,7 @@
 ## Remaining priorities
 
 1. Add isolated browser frame-time and heap profiling for large real graphs; current UI caps and Python response timing do not certify browser rendering performance.
-2. Complete screen-reader and browser zoom checks, including keyboard-only navigation for typed filters, paging, inspector references and recoverable errors.
+2. Complete screen-reader and true browser zoom checks, including keyboard-only navigation for typed filters, paging, inspector references and recoverable errors. A fixture AX-tree/Tab smoke and 640×720 responsive reflow passed, but the browser harness did not apply Ctrl+plus reliably and no screen reader was available.
 3. Expand real-index tests for non-ATT&CK entity kinds, stale/unavailable responses and typed-filter combinations without printing private note content.
 4. Keep `UI_MASTER_SPEC.md`, `UI_TASK_BACKLOG.md`, `UI_DEVELOPMENT_PROGRESS.md`, `UI_TEST_RESULTS.md`, `FRONTEND_BACKEND_CONTRACT.md` and this checkpoint synchronized with evidence.
 
