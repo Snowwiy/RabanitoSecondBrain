@@ -76,11 +76,22 @@ Visible QA covered desktop-sized 1264×715 and 380×787 screenshots. In the narr
 - A loopback fixture that reset the content request produced the visible status “No se pudo leer el Markdown: Failed to fetch”; the selected document metadata remained available, the read button was re-enabled, and the empty reader stayed hidden.
 - The browser driver did not provide a screen-reader certification or reliable browser-zoom control. Production body-reading remains unverified because the tested backend has no `/api/doc/content` route; fixture content is synthetic only.
 
-## Remaining unverified work after reader integration
+## Remaining unverified work after reader integration (historical)
 
-- Full-width screenshots at 1920×1080 / 2560×1440; geometry was checked without horizontal overflow, but the screenshot provider caps captures at 1280px.
+This list described the reader-only checkpoint. The 2026-10-20 typed-graph phase below supersedes its endpoint and viewport statements.
+
 - Browser zoom and screen-reader testing.
-- Large real index / 10k+ graph performance. Current cap and synthetic fixture do not prove production-scale performance.
-- Orbit and Galaxy now reuse derived graph data when their graph/layout inputs are unchanged. The synthetic 1,000-node render and interaction smoke passed, but no frame-time/memory profile or real-index benchmark has been recorded.
-- The real Markdown reader is integrated and browser-verified for Obsidian; this phase did not claim full 1080p/1440p live-note screenshots or broad real-index search/filter coverage.
-- New typed cross-entity graph API; it is absent from this branch baseline.
+- Large real graph browser frame-time/heap profiling. Query and Node caps are measured, but do not prove paint performance.
+- Broad real-index coverage across all typed entity filters and stale projection states.
+
+## Typed Knowledge Graph, navigation and visual QA (2026-10-20)
+
+- Worktree preflight: branch `Frontend-Design`, clean at `515cc257906dbd9bc67bfbab81541b6e966542a0`; `origin/main` remained `5109981a794a41bb7b646beca61ad11045f18ea5`. All implementation stayed in the isolated UI worktree.
+- Selectively integrated the backend typed projection/query dependency closure and loopback routes for `POST /api/knowledge-graph`, `/neighbors` and explicitly confirmed `/sync`; no `main` merge. Page/neighbor reads are read-only and do not synchronize.
+- The frontend filter was compared against `rabanito.knowledge_graph.query.KINDS`: **32 backend kinds, 32 UI kinds, no missing or extra types**. Labels are localized in Inspector, Hex, Tree and the accessible list.
+- Focused backend suite: `python -B -m unittest tests.test_knowledge_graph -v` — **34/34 passed**. Full backend suite: `python -B -m unittest discover -s tests -q` — **359 run, 358 passed, 1 skipped, 0 failed**. Full frontend suite: `node --test tests/test_cyber_ui.mjs tests/test_graph_filter.mjs tests/test_neural_command_center.mjs tests/test_neural_command_center_fixture_api.mjs` — **82 passed, 0 failed**.
+- Large graph checks: read-only typed query returned 50 nodes from 51,992 candidates in about **966 ms** on the real index; the 10,000-node/30,000-edge client input was reduced to 1,000 nodes/4,000 edges and laid out in about **20 ms** by the Node regression test. UI page size remains at most 200 and data loads progressively.
+- Visual QA used a copied read-only SQLite snapshot while the UI and reader resolved local source roots. At 1920×1080 and 2560×1440, Orbit and Hex were visually inspected; DOM geometry showed no horizontal overflow. Document mode loaded 339 documents/2,149 relations, four project groups and 30 category groups. Typed mode showed 180/51,992 nodes/candidates; ATT&CK returned 706 active candidates and selecting a technique loaded a cited one-hop relation. Hex returned selection to Orbit; Tree displayed localized types; Galaxy mounted a 1,598×690 canvas at 1440p. Browser console errors: **0**.
+- Reader recheck selected an authorized real Obsidian document without emitting its title/body. The Inspector rendered **204 bytes** and one resolved reference. Immediately before and after a repeated reader request, source SHA-256, byte size and modification time matched the indexed values. No source/index/database content was written; `/api/knowledge-graph/sync` and `/api/index` were not called.
+- Corrected the stale message that claimed the typed endpoint was missing, exposed all backend kinds, made Escape clear the Inspector and disable neighbor expansion, and restored the document graph pagination label when leaving typed mode.
+- Remaining: screen-reader/browser-zoom certification, real browser frame-time/heap profiling, broader stale/filter coverage, and a non-destructive compatibility assessment for a future Pull Request. No merge was run.

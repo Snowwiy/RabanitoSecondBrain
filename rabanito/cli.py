@@ -27,6 +27,7 @@ from .search import (
 from .server import serve_dashboard
 from .security import get_security_entry, index_security_catalog, search_security, security_context
 from .public_graph import public_graph
+from .knowledge_graph import graph_neighbors, graph_page, sync_graph
 from .dependencies import inspect_manifest, inspect_sbom
 from .coding_memory import recurring_patterns, similar_experiences
 from .cyber.pending import discard_pending_window
@@ -214,6 +215,21 @@ def build_parser() -> argparse.ArgumentParser:
     graph.add_argument("--domain", choices=["documents", "cyber", "security"], default="documents")
     graph.add_argument("--query", default="")
 
+    graph_sync = sub.add_parser("graph-sync", help="explicitly update the local typed graph projection; source files remain read-only")
+    graph_sync.add_argument("--max-inputs", type=int, default=1000)
+    graph_sync.add_argument("--max-bytes", type=int, default=32 * 1024 * 1024)
+    knowledge = sub.add_parser("knowledge-graph", help="read-only typed graph with keyset pagination and cited neighbors")
+    graph_actions = knowledge.add_subparsers(dest="graph_action", required=True)
+    for action in ("page", "neighbors"):
+        command = graph_actions.add_parser(action)
+        if action == "neighbors":
+            command.add_argument("node_id")
+        command.add_argument("--suggestions", action="store_true")
+        command.add_argument("--include-inactive", action="store_true")
+        for field in ("kind", "query", "source", "category", "project", "risk", "since", "until", "cursor"):
+            command.add_argument("--" + field, default="all" if field == "kind" else "" if field == "query" else None)
+        command.add_argument("--limit", type=int, default=50)
+
     backup = sub.add_parser("backup", help="create a local SQLite backup")
     backup.add_argument("--path", type=Path, default=None)
     restore = sub.add_parser("restore", help="restore a local SQLite backup; explicit --yes required")
@@ -395,6 +411,20 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "graph":
         _json(_graph_export(settings, args.limit, args.suggestions) if args.domain == "documents"
               else public_graph(settings, args.domain, limit=args.limit, query=args.query))
+    elif args.command in {"graph-sync", "knowledge-graph"}:
+        try:
+            if args.command == "graph-sync":
+                result = sync_graph(settings, max_inputs=args.max_inputs, max_bytes=args.max_bytes)
+            else:
+                options = {name: getattr(args, name) for name in ("kind", "query", "source", "category", "project", "risk", "since", "until", "cursor", "limit")}
+                result = (graph_page(settings, suggestions=args.suggestions, include_inactive=args.include_inactive, **options)
+                          if args.graph_action == "page" else graph_neighbors(settings, args.node_id, suggestions=args.suggestions, include_inactive=args.include_inactive, **options))
+            _json(result)
+            if result.get("status") == "partial":
+                raise SystemExit(1)
+        except (ValueError, OSError, TimeoutError) as exc:
+            _json({"error": str(exc) if isinstance(exc, ValueError) else "knowledge_graph_operation_failed"})
+            raise SystemExit(1) from None
     elif args.command == "backup":
         target = args.path or (settings.data_dir / "backups" / f"rabanito-{iso_now().replace(':', '').replace('+00:00', 'Z').replace('-', '')}.db")
         with Database(settings.database_path) as db:

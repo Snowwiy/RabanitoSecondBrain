@@ -10,7 +10,7 @@ const createRequestGate = () => { let n=0; return {begin:()=>++n,current:id=>id=
 const requestJson = async () => ({});
 const safeReference = value => { try { const url = new URL(value); return ['https:','http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null; } catch { return null; } };
 `;
-const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, openAuthorizedSource, groupCommandNodes, explicitAdjacency, detectGraphCommunities, parseSafeMarkdown, validateMarkdownResponse};').toString('base64')}`);
+const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, safeGraphCitation, mergeBoundedTypedGraph, TYPED_GRAPH_MAX_NODES, TYPED_GRAPH_MAX_EDGES, openAuthorizedSource, groupCommandNodes, explicitAdjacency, detectGraphCommunities, parseSafeMarkdown, validateMarkdownResponse, entityKindLabel};').toString('base64')}`);
 const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 
 test('normalization keeps only real graph endpoints and preserves suggested relation state', () => {
@@ -24,6 +24,69 @@ test('normalization keeps only real graph endpoints and preserves suggested rela
   assert.equal(graph.edges[0].relation_type, 'wikilink');
   assert.equal(graph.nodes[2].title, '<script>dato</script>');
   assert.equal(graph.totalMatches, 3);
+});
+
+test('typed Knowledge Graph retains stable entity IDs, provenance, citation safety and relation classes', () => {
+  const graph = ui.normalizeCommandGraph({schema_version: 1, projection_available: true, total_candidates: 4, nodes: [
+    {id: 'document:7', kind: 'document', title: 'Nota ñ', source: 'obsidian', citation: 'obsidian:Research/Nota.md', data: {document_id: 7}},
+    {id: 'vulnerability:CVE-2026-1234', kind: 'vulnerability', title: 'CVE-2026-1234', source: 'nvd', citation: 'https://nvd.nist.gov/vuln/detail/CVE-2026-1234', data: {}},
+    {id: 'dependency:8:abc', kind: 'dependency', title: 'parser@1.0', source: 'inventory', citation: 'projects:8:inventory.json', data: {}},
+    {id: 'security:control-1', kind: 'control', title: 'Control', source: 'security', citation: 'https://example.com/control', data: {}},
+  ], edges: [
+    {source: 'document:7', target: 'vulnerability:CVE-2026-1234', kind: 'explicit', validation: 'source_documented', relation_type: 'cites'},
+    {source: 'document:7', target: 'dependency:8:abc', kind: 'suggested', validation: 'suggested'},
+    {source: 'dependency:8:abc', target: 'security:control-1', kind: 'inferred', validation: 'inferred_from_indexed_metadata'},
+  ], has_more: true, next_cursor: 'opaque-cursor'});
+  assert.equal(graph.typed, true);
+  assert.equal(graph.totalMatches, 4);
+  assert.equal(graph.nodes[0].id, 'document:7');
+  assert.equal(graph.nodes[0].document_id, 7);
+  assert.equal(graph.nodes[0].relative_path, 'Research/Nota.md');
+  assert.deepEqual(graph.edges.map(edge => edge.kind), ['explicit', 'suggested', 'inferred']);
+  assert.deepEqual([...ui.explicitAdjacency(graph).get('document:7')], ['vulnerability:CVE-2026-1234']);
+  assert.equal(graph.nextCursor, 'opaque-cursor');
+  assert.equal(graph.truncated, true);
+});
+
+test('typed graph citation accepts only relative local references or credential-free HTTPS citations', () => {
+  assert.equal(ui.safeGraphCitation('projects:8:src/README.md').relativePath, 'src/README.md');
+  assert.equal(ui.safeGraphCitation('obsidian:../private.md').display, '');
+  assert.equal(ui.safeGraphCitation('internal:C:\\Users\\private\\note.md').display, '');
+  assert.equal(ui.safeGraphCitation('https://user:secret@example.com/private').display, '');
+  assert.equal(ui.safeGraphCitation('https://example.com/ref').display, 'https://example.com/ref');
+});
+
+test('typed graph filters include backend kinds and the UI localizes their names', () => {
+  for (const kind of ['weakness', 'product_condition', 'review', 'security_advisory', 'attack_technique', 'attack_asset', 'attack_collection']) {
+    assert.match(html, new RegExp(`option value="${kind}"`));
+  }
+  assert.equal(ui.entityKindLabel('attack_technique'), 'Técnica ATT&CK');
+  assert.equal(ui.entityKindLabel('product_condition'), 'Condición de producto');
+  assert.equal(ui.entityKindLabel('future_kind'), 'future kind');
+});
+
+test('typed graph client merge caps large server responses and keeps edges inside visible nodes', () => {
+  const nodes = Array.from({length: 10_000}, (_, index) => ({id: `dependency:${index}`, kind: 'dependency', title: `Package ${index}`, source: 'inventory'}));
+  const edges = Array.from({length: 30_000}, (_, index) => ({source: `dependency:${index % 10_000}`, target: `dependency:${(index + 1) % 10_000}`, kind: index % 5 ? 'inferred' : 'explicit', relation_type: 'linked'}));
+  const started = performance.now();
+  const graph = ui.mergeBoundedTypedGraph(null, {schema_version: 1, projection_available: true, nodes, edges});
+  const positions = ui.orbitCoordinates(graph.nodes, 1920, 1080);
+  const elapsed = performance.now() - started;
+  const ids = new Set(graph.nodes.map(node => node.id));
+  assert.equal(graph.nodes.length, ui.TYPED_GRAPH_MAX_NODES);
+  assert.ok(graph.edges.length <= ui.TYPED_GRAPH_MAX_EDGES);
+  assert.ok(graph.edges.every(edge => ids.has(edge.source) && ids.has(edge.target)));
+  assert.equal(positions.size, graph.nodes.length);
+  assert.ok([...positions.values()].every(point => Number.isFinite(point.x) && Number.isFinite(point.y)));
+  assert.ok(elapsed < 5000, `10,000-node input should be bounded promptly (observed ${elapsed.toFixed(1)} ms)`);
+});
+
+test('clearing the typed graph selection disables neighbor expansion', () => {
+  assert.match(source, /function renderInspectorEmpty\(\)[\s\S]*?state\.selectedDocument = null; resetMarkdownReader\(\);\s*updateTypedExpansionControl\(\);/);
+});
+
+test('document graph restores its own pagination label after leaving typed mode', () => {
+  assert.match(source, /async function loadGraph\([\s\S]*?if \(state\.graphMode === 'typed'\) return loadTypedGraph\(limit\);\s*byId\('ncLoadMore'\)\.textContent = 'Cargar más nodos';/);
 });
 
 test('safe Markdown parser covers common blocks while treating HTML and unsafe paths as text', () => {
@@ -194,7 +257,7 @@ test('global search exposes an app-owned reset action and clears its results imm
 test('Neural Orbit exposes explicitly labeled topological communities for color, Hex grouping and accessible metadata', () => {
   assert.match(html, /option value="community">Comunidad detectada/);
   assert.match(html, /id="ncCommunityHelp"[^>]*>Las comunidades detectadas se estiman[\s\S]*?no son hechos semánticos/);
-  assert.match(html, /Este endpoint aún no ofrece comunidades tipadas del backend[\s\S]*?enlaces explícitos/);
+  assert.match(html, /Knowledge Graph ofrece entidades y relaciones tipadas en páginas[\s\S]*?no son hechos semánticos/);
   assert.match(source, /function graphCommunities\(\)[\s\S]*?communityCache = detectGraphCommunities\(state\.graph\)/);
   assert.match(source, /colorMode === 'community' \? graphCommunities\(\)/);
   assert.match(source, /basis === 'community' \? graphCommunities\(\)/);

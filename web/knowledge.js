@@ -1,18 +1,45 @@
 import {createRequestGate, requestJson, safeReference} from './cyber.js';
 
 const ORBIT_PALETTE = ['#5de4c5', '#62c8dd', '#b39af6', '#f2a35f', '#8ed0a4', '#e7a6c9', '#a6b8e8'];
+export const TYPED_GRAPH_MAX_NODES = 1000, TYPED_GRAPH_MAX_EDGES = 4000;
 const stableKey = value => String(value ?? '').normalize('NFC').trim() || 'Sin clasificar';
+const ENTITY_KIND_LABELS = Object.freeze({
+  project: 'Proyecto', document: 'Documento', decision: 'Decisión', solution: 'Experiencia revisada',
+  vulnerability: 'Vulnerabilidad', observation: 'Observación pública', weakness: 'Debilidad (CWE)',
+  package: 'Paquete', security_concept: 'Concepto de seguridad', reference: 'Referencia',
+  product_condition: 'Condición de producto', standard: 'Estándar', control: 'Control',
+  dependency: 'Dependencia', dependency_declaration: 'Declaración de dependencia', technology: 'Tecnología',
+  snapshot: 'Captura de versión', review: 'Revisión', security_advisory: 'Aviso de seguridad',
+  attack_technique: 'Técnica ATT&CK', attack_campaign: 'Campaña ATT&CK', attack_mitigation: 'Mitigación ATT&CK',
+  threat_group: 'Grupo de intrusión', attack_software: 'Software ATT&CK', attack_matrix: 'Matriz ATT&CK',
+  attack_tactic: 'Táctica ATT&CK', attack_analytic: 'Analítica ATT&CK',
+  attack_data_component: 'Componente de datos ATT&CK', attack_data_source: 'Fuente de datos ATT&CK',
+  attack_detection_strategy: 'Estrategia de detección ATT&CK', attack_asset: 'Activo ATT&CK',
+  attack_collection: 'Colección ATT&CK',
+});
+export function entityKindLabel(value) {
+  const kind = String(value ?? '').slice(0, 80);
+  return ENTITY_KIND_LABELS[kind] || kind.replaceAll('_', ' ') || 'Entidad';
+}
 
 // Pure projections are exported so the real frontend behavior can be tested without a live index.
 export function normalizeCommandGraph(payload) {
+  const typed = Number(payload?.schema_version) === 1;
   const sourceNodes = Array.isArray(payload?.nodes) ? payload.nodes : [];
   const nodes = sourceNodes.map(raw => {
     const id = raw?.document_id ?? raw?.id;
     if (!(typeof id === 'string' || Number.isSafeInteger(id)) || String(id).length > 160) return null;
+    const data = raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data) ? raw.data : {};
+    const typedDocumentId = Number(data.document_id ?? (/^(?:document|solution):(\d+)$/.exec(String(id)) || [])[1]);
+    const citation = safeGraphCitation(raw.citation);
     return {
       ...raw, id: String(id), title: String(raw.title ?? raw.name ?? 'Sin título').slice(0, 500),
       category: String(raw.category ?? ''), source_kind: String(raw.source_kind ?? raw.source ?? ''),
-      project_name: String(raw.project_name ?? raw.project ?? ''), degree: Math.max(0, Number(raw.degree) || 0),
+      project_name: String(raw.project_name ?? raw.project ?? (raw.contributor_project_id ? `Proyecto ${raw.contributor_project_id}` : '')),
+      entity_kind: String(raw.entity_kind ?? (typed ? raw.kind : 'document') ?? 'document').slice(0, 80),
+      document_id: Number.isSafeInteger(typedDocumentId) && typedDocumentId > 0 ? typedDocumentId : null,
+      citation: citation.display, relative_path: safeRelativePath(raw.relative_path || citation.relativePath),
+      data, degree: Math.max(0, Number(raw.degree) || 0),
     };
   }).filter(Boolean);
   const uniqueNodes = [...new Map(nodes.map(node => [node.id, node])).values()];
@@ -20,11 +47,60 @@ export function normalizeCommandGraph(payload) {
   const edges = (Array.isArray(payload?.edges) ? payload.edges : []).flatMap(raw => {
     const source = String(raw?.source ?? ''), target = String(raw?.target ?? '');
     if (!ids.has(source) || !ids.has(target) || source === target) return [];
-    const suggested = raw.kind === 'suggested' || raw.validation === 'suggested' || raw.status === 'suggested';
-    return [{...raw, source, target, kind: suggested ? 'suggested' : 'explicit'}];
+    const classification = String(raw.classification ?? raw.kind ?? '');
+    const validation = String(raw.validation ?? '');
+    const kind = ['suggested', 'inferred', 'reviewed_claim', 'explicit'].includes(classification)
+      ? classification
+      : classification === 'suggested' || validation === 'suggested' ? 'suggested'
+        : classification === 'inferred' || validation.startsWith('inferred') ? 'inferred'
+          : classification === 'reviewed_claim' || validation === 'reviewed_claim' || validation.startsWith('reviewed_') ? 'reviewed_claim'
+            : 'explicit';
+    return [{...raw, source, target, kind}];
   });
   const uniqueEdges = [...new Map(edges.map(edge => [`${edge.source}\u0000${edge.target}\u0000${edge.kind}\u0000${edge.relation_type || ''}`, edge])).values()];
-  return {nodes: uniqueNodes, edges: uniqueEdges, totalMatches: Math.max(uniqueNodes.length, Number(payload?.total_matches) || 0), truncated: Boolean(payload?.truncated)};
+  const degrees = new Map(uniqueNodes.map(node => [node.id, 0]));
+  for (const edge of uniqueEdges) { degrees.set(edge.source, degrees.get(edge.source) + 1); degrees.set(edge.target, degrees.get(edge.target) + 1); }
+  const normalizedNodes = uniqueNodes.map(node => ({...node, degree: Math.max(node.degree, degrees.get(node.id) || 0)}));
+  return {
+    nodes: normalizedNodes, edges: uniqueEdges,
+    totalMatches: Math.max(normalizedNodes.length, Number(payload?.total_matches ?? payload?.total_candidates) || 0),
+    truncated: Boolean(payload?.truncated ?? payload?.has_more),
+    typed, coverage: payload?.coverage || null, projectionAvailable: payload?.projection_available,
+    nextCursor: typeof payload?.next_cursor === 'string' ? payload.next_cursor : null,
+  };
+}
+
+export function safeGraphCitation(citation) {
+  const value = String(citation ?? '').trim();
+  if (!value || value.length > 4000 || /[\x00-\x1f\x7f]/.test(value)) return {display: '', relativePath: ''};
+  if (/^https:\/\//i.test(value)) {
+    try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password ? {display: url.href.slice(0, 1000), relativePath: ''} : {display: '', relativePath: ''}; }
+    catch { return {display: '', relativePath: ''}; }
+  }
+  const match = /^(obsidian|projects|internal|index|cyber|security|attack):(.+)$/i.exec(value);
+  if (!match) return {display: '', relativePath: ''};
+  let relative = match[2];
+  if (match[1].toLowerCase() === 'projects') relative = relative.replace(/^\d+:/, '');
+  const safe = safeRelativePath(relative);
+  return safe ? {display: value.slice(0, 1000), relativePath: safe} : {display: '', relativePath: ''};
+}
+
+export function mergeBoundedTypedGraph(current, incoming, {maxNodes = TYPED_GRAPH_MAX_NODES, maxEdges = TYPED_GRAPH_MAX_EDGES} = {}) {
+  const safeNodeCap = Math.min(TYPED_GRAPH_MAX_NODES, Math.max(1, Math.floor(Number(maxNodes) || 1)));
+  const safeEdgeCap = Math.min(TYPED_GRAPH_MAX_EDGES, Math.max(0, Math.floor(Number(maxEdges) || 0)));
+  const oldNodes = Array.isArray(current?.nodes) ? current.nodes.slice(0, safeNodeCap) : [];
+  const newNodes = Array.isArray(incoming?.nodes) ? incoming.nodes.slice(0, safeNodeCap) : [];
+  const nodes = [...new Map([...oldNodes, ...newNodes].map(node => [String(node.id), node])).values()].slice(0, safeNodeCap);
+  const ids = new Set(nodes.map(node => String(node.id)));
+  const oldEdges = Array.isArray(current?.edges) ? current.edges.slice(0, safeEdgeCap) : [];
+  const newEdges = Array.isArray(incoming?.edges) ? incoming.edges.slice(0, safeEdgeCap) : [];
+  const edges = [...new Map([...oldEdges, ...newEdges]
+    .filter(edge => ids.has(String(edge.source)) && ids.has(String(edge.target)))
+    .map(edge => [`${edge.source}\u0000${edge.target}\u0000${edge.kind}\u0000${edge.relation_type || ''}`, edge])).values()].slice(0, safeEdgeCap);
+  return normalizeCommandGraph({schema_version: 1, projection_available: true, nodes, edges,
+    total_candidates: Math.max(Number(current?.totalMatches) || 0, Number(incoming?.total_candidates ?? incoming?.total_matches) || 0),
+    has_more: Boolean(incoming?.has_more), next_cursor: incoming?.next_cursor ?? null,
+    coverage: incoming?.coverage ?? current?.coverage ?? null});
 }
 
 export function orbitLayoutKey({width, height, spacing, depth, minimumDegree, selectedId, componentFocus, groupBasis, groupName}) {
@@ -321,7 +397,7 @@ export function detectGraphCommunities(graph) {
   return new Map([...originalGroups].flatMap(([label, originalIds]) => originalIds.map(id => [id, names.get(label)])));
 }
 export function groupCommandNodes(nodes, groupBy = 'category', graph = null, componentMap = null) {
-  const field = groupBy === 'source' ? 'source_kind' : groupBy === 'project' ? 'project_name' : 'category';
+  const field = groupBy === 'source' ? 'source_kind' : groupBy === 'project' ? 'project_name' : groupBy === 'kind' ? 'entity_kind' : 'category';
   const groupsByNode = groupBy === 'component' && graph
     ? (componentMap || connectedComponents(graph))
     : groupBy === 'community' && graph ? (componentMap || detectGraphCommunities(graph)) : null;
@@ -356,8 +432,9 @@ export function startCommandCenter(doc, fetcher = fetch) {
   root.dataset.initialized = 'true';
   const api = (path, body) => requestJson(path, body, fetcher);
   const graphGate = createRequestGate(), searchGate = createRequestGate(), inspectGate = createRequestGate(), markdownGate = createRequestGate();
-  const state = {graph: normalizeCommandGraph({}), projects: [], selected: null, selectedDocument: null, componentFocus: null, groupFocus: null, query: '', offset: 0, nodeDirectoryPage: 0, panX: 0, panY: 0, zoom: 1, dragging: false, labels: true, reducedMotion: false};
+  const state = {graph: normalizeCommandGraph({}), graphMode: 'documents', typedHasMore: false, typedCursor: null, typedNeighborCursors: new Map(), typedInFlight: new Set(), typedExpanded: new Set(), projects: [], selected: null, selectedDocument: null, componentFocus: null, groupFocus: null, query: '', offset: 0, nodeDirectoryPage: 0, panX: 0, panY: 0, zoom: 1, dragging: false, labels: true, reducedMotion: false};
   const NODE_DIRECTORY_PAGE_SIZE = 25;
+  const TYPED_EXPANSION_CAP = 40;
   let derivedGraph = null, adjacencyCache = null, componentCache = null, communityCache = null;
   let orbitLayoutCache = {graph: null, key: '', value: null};
   const make = (tag, text, className) => {
@@ -485,21 +562,21 @@ export function startCommandCenter(doc, fetcher = fetch) {
   }
 
   async function readMarkdown() {
-    const documentId = Number(state.selected), gate = markdownGate.begin();
+    const documentId = Number(state.selectedDocument?.document_id ?? state.selected), gate = markdownGate.begin();
     if (!Number.isSafeInteger(documentId) || documentId <= 0 || !state.selectedDocument) return;
     const reader = byId('ncMarkdownReader'), button = byId('ncReadMarkdown');
     reader.hidden = false; button.disabled = true; byId('ncMarkdownStatus').textContent = 'Leyendo la vista Markdown autorizada…';
     byId('ncMarkdownSearch').hidden = true; byId('ncMarkdownContent').replaceChildren(); byId('ncMarkdownReferences').replaceChildren();
     try {
       const payload = await api('/api/doc/content', {document_id: documentId, max_bytes: MARKDOWN_MAX_CHARACTERS});
-      if (!markdownGate.current(gate) || String(state.selected) !== String(documentId)) return;
+      if (!markdownGate.current(gate) || Number(state.selectedDocument?.document_id ?? state.selected) !== documentId) return;
       const content = validateMarkdownResponse(payload, documentId);
       const tree = parseSafeMarkdown(content, payload.references);
       byId('ncMarkdownContent').replaceChildren(renderMarkdownContent(tree)); renderMarkdownReferences(payload.references);
       byId('ncMarkdownSearch').hidden = false; byId('ncMarkdownQuery').value = ''; byId('ncMarkdownSearchStatus').textContent = 'Escribe un término para buscar en el documento actual.';
       byId('ncMarkdownStatus').textContent = payload.truncated ? `Vista parcial: ${Number(payload.bytes_returned).toLocaleString('es-MX')} bytes. El servidor indicó que el documento continúa.` : `Vista Markdown del documento ${documentId} cargada · ${Number(payload.bytes_returned).toLocaleString('es-MX')} bytes.`;
     } catch (error) {
-      if (!markdownGate.current(gate) || String(state.selected) !== String(documentId)) return;
+      if (!markdownGate.current(gate) || Number(state.selectedDocument?.document_id ?? state.selected) !== documentId) return;
       const message = String(error.message || 'error de API');
       const httpStatus = /^HTTP (\d{3})$/.exec(message)?.[1];
       const status = ({
@@ -513,7 +590,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
         ? 'La respuesta local no cumple el contrato seguro del lector. No se mostró su contenido.'
         : 'No se pudo leer el Markdown. Los metadatos y fragmentos citados permanecen disponibles; puedes volver a intentarlo.');
       byId('ncMarkdownStatus').textContent = status; reader.hidden = true; byId('ncMarkdownContent').replaceChildren(); byId('ncMarkdownReferences').replaceChildren();
-    } finally { if (markdownGate.current(gate) && String(state.selected) === String(documentId)) button.disabled = false; }
+    } finally { if (markdownGate.current(gate) && Number(state.selectedDocument?.document_id ?? state.selected) === documentId) button.disabled = false; }
   }
 
   function updateAccessibleNodeSelection() {
@@ -531,7 +608,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
     for (const node of nodes.slice(start, end)) {
       const item = make('li'), button = make('button', node.title, 'nc-node-directory-item');
       button.type = 'button'; button.dataset.nodeId = node.id;
-      const metadata = [node.category, node.source_kind, node.project_name, graphCommunities().get(node.id)].filter(Boolean).join(' · ');
+      const metadata = [entityKindLabel(node.entity_kind), node.category, node.source_kind, node.project_name, graphCommunities().get(node.id)].filter(Boolean).join(' · ');
       if (metadata) {
         button.setAttribute('aria-label', `${node.title}. ${metadata}`);
         item.append(button, make('span', metadata, 'nc-node-directory-meta'));
@@ -714,7 +791,137 @@ export function startCommandCenter(doc, fetcher = fetch) {
     };
   }
 
+  function typedGraphRequest(limit = Number(byId('ncDensity').value), cursor = null) {
+    const body = {
+      kind: byId('ncKindFilter').value || 'all',
+      limit: Math.min(200, Math.max(0, Math.floor(Number(limit) || 0))),
+      suggestions: byId('ncSuggestions').checked,
+    };
+    const query = byId('ncQuery').value.trim().slice(0, 200);
+    const source = byId('ncSource').value || '';
+    const category = byId('ncCategory').value || '';
+    const projectId = Number(byId('ncProject').value);
+    if (query) body.q = query;
+    if (source) body.source = source;
+    if (category) body.category = category;
+    if (Number.isSafeInteger(projectId) && projectId > 0) body.project_id = projectId;
+    if (typeof cursor === 'string' && cursor) body.cursor = cursor;
+    return body;
+  }
+
+  function updateTypedExpansionControl() {
+    const button = byId('ncExpandNeighbors');
+    if (state.graphMode !== 'typed' || !state.selected || !state.graph.nodes.some(node => node.id === state.selected)) {
+      button.disabled = true; return;
+    }
+    const hasCursor = state.typedNeighborCursors.has(state.selected);
+    const alreadyExpanded = state.typedExpanded.has(state.selected) && !hasCursor;
+    button.disabled = state.typedInFlight.size > 0 && state.typedInFlight.has(state.selected)
+      || alreadyExpanded || state.typedExpanded.size >= TYPED_EXPANSION_CAP
+      || state.graph.nodes.length >= TYPED_GRAPH_MAX_NODES;
+    button.textContent = hasCursor ? 'Cargar más vecinos' : 'Expandir vecinos';
+  }
+
+  function commitTypedPayload(payload, {append = false} = {}) {
+    const incoming = normalizeCommandGraph(payload);
+    state.graph = mergeBoundedTypedGraph(append ? state.graph : null, payload);
+    state.typedHasMore = incoming.truncated;
+    state.typedCursor = incoming.nextCursor;
+    return incoming;
+  }
+
+  async function loadTypedGraph(limit = Number(byId('ncDensity').value), {append = false} = {}) {
+    const generation = graphGate.begin();
+    if (!append) {
+      state.typedGeneration = (state.typedGeneration || 0) + 1;
+      state.typedNeighborCursors.clear(); state.typedInFlight.clear(); state.typedExpanded.clear();
+      state.typedCursor = null; state.typedHasMore = false;
+    }
+    const viewGeneration = state.typedGeneration || 0;
+    setStatus(append ? 'Cargando la siguiente página del Knowledge Graph tipado…' : 'Consultando la proyección tipada local…');
+    byId('ncLoadMore').disabled = true;
+    try {
+      const payload = await api('/api/knowledge-graph', typedGraphRequest(limit, append ? state.typedCursor : null));
+      if (!graphGate.current(generation) || state.graphMode !== 'typed' || viewGeneration !== state.typedGeneration) return;
+      if (payload.projection_available !== true) {
+        state.graph = normalizeCommandGraph({...payload, schema_version: 1});
+        state.typedHasMore = false; state.typedCursor = null; state.selected = null; state.selectedDocument = null;
+        renderInspectorEmpty(); renderAccessibleNodeList(); renderHex(); renderTree(); drawOrbit();
+        byId('ncGraphSync').hidden = false; byId('ncLoadMore').hidden = true;
+        byId('ncGraphCount').textContent = 'La proyección tipada todavía no está disponible.';
+        setStatus('El índice tipado requiere una actualización explícita. No se escribió ni se sincronizó nada al abrir esta vista.', 'pending');
+        return;
+      }
+      const incoming = commitTypedPayload(payload, {append});
+      byId('ncGraphSync').hidden = !Boolean(incoming.coverage?.requires_sync);
+      byId('ncTypedGraphNote').hidden = false;
+      byId('ncLoadMore').hidden = !state.typedHasMore;
+      byId('ncLoadMore').textContent = 'Cargar más entidades tipadas';
+      byId('ncGraphCount').textContent = `${safeCount(state.graph.nodes.length)} nodos visibles · ${safeCount(state.graph.edges.length)} relaciones expandidas · ${safeCount(incoming.totalMatches)} candidatos${state.typedHasMore ? ' · hay más páginas' : ''}`;
+      if (!state.graph.nodes.some(node => node.id === state.selected)) { state.selected = null; state.selectedDocument = null; renderInspectorEmpty(); }
+      state.componentFocus = null; state.groupFocus = null;
+      state.nodeDirectoryPage = 0; renderAccessibleNodeList(); renderHex(); renderTree(); drawOrbit(); updateTypedExpansionControl();
+      const coverageNote = incoming.coverage?.requires_sync ? ' · algunas entradas necesitan actualización explícita' : '';
+      setStatus(state.graph.nodes.length
+        ? `Knowledge Graph tipado: ${state.graph.nodes.length} nodos visibles. La expansión de vecinos es de un salto y tiene límites locales${coverageNote}.`
+        : 'No se encontraron entidades tipadas para estos filtros.', state.graph.nodes.length ? '' : 'pending');
+      byId('ncPendingNote').hidden = false;
+    } catch (error) {
+      if (graphGate.current(generation)) {
+        if (!append) state.graph = normalizeCommandGraph({schema_version: 1});
+        renderAccessibleNodeList(); drawOrbit(); renderHex(); renderTree();
+        setStatus(`No se pudo leer el Knowledge Graph tipado: ${String(error.message || 'error de API').slice(0, 180)}. Revisa el contrato local y vuelve a intentarlo.`, 'error');
+      }
+    } finally { if (graphGate.current(generation)) byId('ncLoadMore').disabled = false; }
+  }
+
+  async function expandTypedNeighbors(id = state.selected) {
+    const nodeId = String(id ?? '');
+    if (state.graphMode !== 'typed' || !state.graph.nodes.some(node => node.id === nodeId)) return;
+    const cursor = state.typedNeighborCursors.get(nodeId) || null;
+    if (state.typedExpanded.has(nodeId) && !cursor) return;
+    if (state.typedInFlight.has(nodeId) || state.typedExpanded.size >= TYPED_EXPANSION_CAP) return;
+    if (state.graph.nodes.length >= TYPED_GRAPH_MAX_NODES) { setStatus('Se alcanzó el límite visual de nodos; reduce filtros antes de expandir más.', 'pending'); return; }
+    const key = `${nodeId}\u0000${cursor || ''}`, generation = state.typedGeneration;
+    state.typedInFlight.add(nodeId); updateTypedExpansionControl();
+    setStatus(`Expandiendo un salto desde ${state.graph.nodes.find(node => node.id === nodeId)?.title || 'la entidad'}…`);
+    try {
+      const payload = await api('/api/knowledge-graph/neighbors', {...typedGraphRequest(200, cursor), id: nodeId});
+      if (state.graphMode !== 'typed' || generation !== state.typedGeneration) return;
+      if (payload.anchor_visible !== true) { state.typedExpanded.add(nodeId); state.typedNeighborCursors.delete(nodeId); setStatus('La entidad ya no está visible en el ámbito autorizado. Actualiza la página del grafo.'); return; }
+      commitTypedPayload(payload, {append: true});
+      state.typedExpanded.add(nodeId);
+      if (payload.has_more && typeof payload.next_cursor === 'string') state.typedNeighborCursors.set(nodeId, payload.next_cursor);
+      else state.typedNeighborCursors.delete(nodeId);
+      byId('ncGraphCount').textContent = `${safeCount(state.graph.nodes.length)} nodos visibles · ${safeCount(state.graph.edges.length)} relaciones expandidas · límite ${TYPED_GRAPH_MAX_NODES} nodos`;
+      state.nodeDirectoryPage = 0; renderAccessibleNodeList(); renderHex(); renderTree(); drawOrbit(); updateTypedExpansionControl();
+      setStatus(`${safeCount(payload.edges?.length || 0)} relaciones cargadas para la entidad seleccionada · clasificación y cita conservadas.`);
+    } catch (error) {
+      if (generation === state.typedGeneration) setStatus(`No se pudieron cargar los vecinos: ${String(error.message || 'error de API').slice(0, 160)}. La proyección no se modificó.`, 'error');
+    } finally {
+      state.typedInFlight.delete(nodeId); updateTypedExpansionControl();
+    }
+  }
+
+  async function syncTypedGraph() {
+    if (state.graphMode !== 'typed' || typeof window.confirm !== 'function') return;
+    const approved = window.confirm('Actualizará la proyección derivada del Knowledge Graph en la base local. No modifica Obsidian ni archivos de proyectos. ¿Continuar?');
+    if (!approved) return;
+    const button = byId('ncGraphSync'); button.disabled = true;
+    setStatus('Actualizando una tanda acotada de la proyección tipada…');
+    try {
+      const result = await api('/api/knowledge-graph/sync', {confirm_graph_sync: true, max_inputs: 1000, max_bytes: 32 * 1024 * 1024});
+      const summary = `${result.status || 'resultado'} · ${safeCount(result.examined)} entradas revisadas${result.errors ? ` · ${safeCount(result.errors)} errores` : ''}`;
+      setStatus(`Proyección tipada: ${summary}. Solo se procesó una tanda; no hay sincronización ilimitada.` , result.status === 'error' ? 'error' : 'pending');
+      await loadTypedGraph();
+    } catch (error) {
+      setStatus(`No se pudo actualizar la proyección: ${String(error.message || 'error de API').slice(0, 160)}.`, 'error');
+    } finally { button.disabled = false; }
+  }
+
   async function loadGraph(limit = Number(byId('ncDensity').value)) {
+    if (state.graphMode === 'typed') return loadTypedGraph(limit);
+    byId('ncLoadMore').textContent = 'Cargar más nodos';
     const generation = graphGate.begin(); setStatus('Consultando relaciones confirmadas del índice local…');
     byId('ncLoadMore').disabled = true;
     try {
@@ -722,6 +929,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
       if (!graphGate.current(generation)) return;
       if (payload.fixture === true) { byId('ncFixtureBanner').hidden = false; doc.body.dataset.fixture = 'true'; }
       state.graph = normalizeCommandGraph(payload); state.offset = limit; state.componentFocus = null; state.groupFocus = null;
+      byId('ncGraphSync').hidden = true; byId('ncTypedGraphNote').hidden = true;
       byId('ncGraphCount').textContent = `${safeCount(payload.total_matches ?? state.graph.nodes.length)} entidades encontradas · ${safeCount(state.graph.edges.length)} relaciones cargadas${payload.truncated ? ' · vista limitada' : ''}`;
       byId('ncLoadMore').hidden = !payload.truncated;
       if (!state.graph.nodes.some(node => node.id === state.selected)) { state.selected = null; state.selectedDocument = null; renderInspectorEmpty(); }
@@ -747,7 +955,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
     if (state.groupFocus) {
       if (state.groupFocus.basis === 'community') baseNodes = baseNodes.filter(node => graphCommunities().get(node.id) === state.groupFocus.name);
       else {
-        const field = state.groupFocus.basis === 'source' ? 'source_kind' : state.groupFocus.basis === 'project' ? 'project_name' : 'category';
+        const field = state.groupFocus.basis === 'source' ? 'source_kind' : state.groupFocus.basis === 'project' ? 'project_name' : state.groupFocus.basis === 'kind' ? 'entity_kind' : 'category';
         baseNodes = baseNodes.filter(node => stableKey(node[field]) === state.groupFocus.name);
       }
     }
@@ -787,6 +995,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
     const node = id && state.graph.nodes.find(item => item.id === id), point = id && orbitPoints.get(id);
     if (!node || !point) { tooltip.hidden = true; tooltip.replaceChildren(); return; }
     const metadata = [
+      node.entity_kind ? `Tipo · ${node.entity_kind}` : '',
       node.category ? `Categoría · ${node.category}` : '',
       node.source_kind ? `Fuente · ${node.source_kind}` : '',
       node.project_name ? `Proyecto · ${node.project_name}` : '',
@@ -839,8 +1048,8 @@ export function startCommandCenter(doc, fetcher = fetch) {
       const a = local.get(edge.source), b = local.get(edge.target); if (!a || !b) continue;
       const related = edge.source === state.selected || edge.target === state.selected;
       context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y);
-      context.setLineDash(edge.kind === 'suggested' ? [3, 4] : []);
-      context.strokeStyle = edge.kind === 'suggested' ? '#f2a35f' : related ? '#69ead0' : '#65a3aa';
+      context.setLineDash(edge.kind === 'suggested' ? [3, 4] : edge.kind === 'inferred' ? [2, 4] : edge.kind === 'reviewed_claim' ? [6, 3] : []);
+      context.strokeStyle = edge.kind === 'suggested' ? '#f2a35f' : edge.kind === 'inferred' ? '#b39af6' : edge.kind === 'reviewed_claim' ? '#78a8ee' : related ? '#69ead0' : '#65a3aa';
       context.globalAlpha = Number(byId('ncLinkBrightness').value) / 100 * (edge.kind === 'suggested' ? 0.78 : related ? 1 : 0.46);
       context.lineWidth = Number(byId('ncLinkWidth').value) * (related ? 1.3 : 0.8); context.stroke(); context.globalAlpha = 1;
     }
@@ -850,7 +1059,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
       const point = local.get(node.id); if (!point) continue;
       const x = centerX + point.x * scale, y = centerY + point.y * scale;
       const selected = node.id === state.selected, hovered = node.id === orbitHover?.id, active = selected || hovered, linked = selectedNeighbors.has(node.id);
-      const colorKey = colorMode === 'source' ? node.source_kind : colorMode === 'project' ? node.project_name : colorGroups ? colorGroups.get(node.id) : node.category;
+      const colorKey = colorMode === 'source' ? node.source_kind : colorMode === 'project' ? node.project_name : colorMode === 'kind' ? node.entity_kind : colorGroups ? colorGroups.get(node.id) : node.category;
       const radius = Math.min(18, baseSize + Math.min(7, Math.sqrt(node.degree || 0)) + (selected ? 3 : hovered ? 2 : 0));
       orbitPoints.set(node.id, {x, y, hitRadius: Math.max(22, radius * scale + 8)});
       context.beginPath(); context.arc(point.x, point.y, radius + (selected ? 5 : hovered ? 3 : 0), 0, Math.PI * 2);
@@ -875,14 +1084,15 @@ export function startCommandCenter(doc, fetcher = fetch) {
     const fragment = doc.createDocumentFragment();
     for (const group of groups) {
       const wrap = make('article', undefined, 'nc-hex-wrap'), card = make('div', undefined, 'nc-hex-card');
-      const button = make('button', group.name, 'nc-hex-select'); button.type = 'button';
+      const displayName = basis === 'kind' ? entityKindLabel(group.name) : group.name;
+      const button = make('button', displayName, 'nc-hex-select'); button.type = 'button';
       const selected = basis === 'component'
         ? state.componentFocus === group.name && !state.groupFocus
         : state.groupFocus?.basis === basis && state.groupFocus.name === group.name;
       button.setAttribute('aria-pressed', String(Boolean(selected)));
       card.dataset.selected = String(Boolean(selected));
-      const groupLabel = basis === 'community' ? 'comunidad detectada' : basis === 'component' ? 'componente conectado' : basis === 'source' ? 'fuente' : basis === 'project' ? 'proyecto' : 'categoría';
-      button.setAttribute('aria-label', `${group.name}: ${group.count} entidades, agrupadas por ${groupLabel}`);
+      const groupLabel = basis === 'community' ? 'comunidad detectada' : basis === 'component' ? 'componente conectado' : basis === 'source' ? 'fuente' : basis === 'project' ? 'proyecto' : basis === 'kind' ? 'tipo de entidad' : 'categoría';
+      button.setAttribute('aria-label', `${displayName}: ${group.count} entidades, agrupadas por ${groupLabel}`);
       button.addEventListener('click', () => {
         if (basis === 'component') {
           state.componentFocus = state.componentFocus === group.name ? null : group.name;
@@ -893,8 +1103,8 @@ export function startCommandCenter(doc, fetcher = fetch) {
         state.componentFocus = null;
         state.groupFocus = state.groupFocus?.basis === basis && state.groupFocus.name === group.name ? null : {basis, name: group.name};
         setStatus(basis === 'community'
-          ? `${state.groupFocus ? `${group.name} seleccionada` : 'Vista completa'} · estimación topológica calculada solo desde enlaces explícitos; no es una comunidad semántica confirmada.`
-          : `${state.groupFocus ? `${basis}: ${group.name}` : 'Vista completa'} · entidades agrupadas desde metadatos del índice.`);
+          ? `${state.groupFocus ? `${displayName} seleccionada` : 'Vista completa'} · estimación topológica calculada solo desde enlaces explícitos; no es una comunidad semántica confirmada.`
+          : `${state.groupFocus ? `${basis === 'kind' ? 'tipo de entidad' : basis}: ${displayName}` : 'Vista completa'} · entidades agrupadas desde metadatos del índice.`);
         drawOrbit(); setView('orbit');
       });
       card.append(button, make('span', `${group.count} ${group.count === 1 ? 'entidad' : 'entidades'}`, 'nc-hex-count'));
@@ -909,29 +1119,33 @@ export function startCommandCenter(doc, fetcher = fetch) {
   }
 
   function renderTree() {
-    const target = byId('ncPanelTree'), groups = groupCommandNodes(state.graph.nodes, 'project');
+    const target = byId('ncPanelTree'), groups = groupCommandNodes(state.graph.nodes, state.graph.typed ? 'kind' : 'project');
     target.replaceChildren();
     if (!groups.length) { target.append(make('p', 'El árbol está vacío: el índice no contiene documentos para estos filtros.', 'meta')); return; }
     const rootList = make('ul');
     for (const group of groups) {
-      const groupItem = make('li'), groupDetails = make('details'), summary = make('summary', `${group.name} · ${group.count} documento${group.count === 1 ? '' : 's'}`), docs = make('ul');
+      const displayGroupName = state.graph.typed ? entityKindLabel(group.name) : group.name;
+      const groupItem = make('li'), groupDetails = make('details'), summary = make('summary', `${displayGroupName} · ${group.count} ${state.graph.typed ? 'entidades' : 'documentos'}`), docs = make('ul');
       groupDetails.append(summary);
       for (const node of group.nodes) {
         const item = make('li'), button = make('button'); button.type = 'button';
-        button.append(make('strong', node.title), make('span', `${node.category || 'categoría sin dato'} · ${node.source_kind || 'fuente local'}`));
+        button.append(make('strong', node.title), make('span', `${entityKindLabel(node.entity_kind || 'document')} · ${node.category || 'categoría sin dato'} · ${node.source_kind || 'fuente local'}`));
         button.addEventListener('click', () => void inspect(node.id)); item.append(button); docs.append(item);
       }
       groupDetails.append(docs); groupItem.append(groupDetails); rootList.append(groupItem);
     }
-    const relationList = make('details'), relationSummary = make('summary', `Relaciones explícitas · ${state.graph.edges.filter(edge => edge.kind === 'explicit').length}`), relations = make('ul');
-    for (const edge of state.graph.edges.filter(item => item.kind === 'explicit').slice(0, 160)) {
+    const includedEdges = state.graph.typed ? state.graph.edges : state.graph.edges.filter(edge => edge.kind === 'explicit');
+    const relationList = make('details'), relationSummary = make('summary', `${state.graph.typed ? 'Relaciones clasificadas' : 'Relaciones explícitas'} · ${includedEdges.length}`), relations = make('ul');
+    for (const edge of includedEdges.slice(0, 160)) {
       const source = state.graph.nodes.find(node => node.id === edge.source), targetNode = state.graph.nodes.find(node => node.id === edge.target);
       if (!source || !targetNode) continue;
-      const item = make('li'), button = make('button'); button.type = 'button'; button.textContent = `${source.title} ↔ ${targetNode.title} · ${edge.relation_type || 'relación explícita'}`;
+      const item = make('li'), button = make('button'); button.type = 'button'; button.textContent = `${source.title} ↔ ${targetNode.title} · ${edge.relation_type || 'relación'}${state.graph.typed ? ` · ${edge.kind}` : ''}`;
       button.addEventListener('click', () => void inspect(source.id)); item.append(button); relations.append(item);
     }
     relationList.append(relationSummary, relations); const relationItem = make('li'); relationItem.append(relationList); rootList.append(relationItem);
-    const note = make('p', 'Jerarquía mostrada: agrupación por metadato de proyecto. No se presupone una arquitectura inexistente; las relaciones listadas provienen únicamente de enlaces del grafo.', 'meta');
+    const note = make('p', state.graph.typed
+      ? 'Árbol agrupado por tipo publicado. Las citas y validaciones se conservan; una relación inferida, una sugerencia y una afirmación revisada no se elevan a hecho confirmado.'
+      : 'Jerarquía mostrada: agrupación por metadato de proyecto. No se presupone una arquitectura inexistente; las relaciones listadas provienen únicamente de enlaces del grafo.', 'meta');
     target.append(note, rootList);
   }
 
@@ -944,20 +1158,77 @@ export function startCommandCenter(doc, fetcher = fetch) {
     byId('ncOpenOriginal').disabled = true; byId('ncGetContext').disabled = true;
     byId('ncSourceRef').textContent = 'No se expone la ruta absoluta de la fuente.';
     state.selectedDocument = null; resetMarkdownReader();
+    updateTypedExpansionControl();
   }
 
   function dispatchSelection(id, node = null) {
     doc.dispatchEvent(new CustomEvent('rabanito-command-selection', {detail: {id: String(id), node}}));
   }
 
+  async function inspectTypedEntity(node) {
+    const generation = inspectGate.begin();
+    state.selected = node.id; state.selectedDocument = null;
+    updateAccessibleNodeSelection(); updateTypedExpansionControl();
+    resetMarkdownReader('Esta entidad no es un documento autorizado para lectura Markdown.');
+    byId('ncInspectorType').textContent = entityKindLabel(node.entity_kind);
+    byId('ncInspectorAnnouncement').textContent = `Entidad ${entityKindLabel(node.entity_kind)}: ${node.title}.`;
+    const body = byId('ncInspectorBody'), fields = [
+      ['Tipo', entityKindLabel(node.entity_kind)], ['Procedencia', node.source_kind], ['Categoría', node.category],
+      ['Proyecto', node.project_name], ['Actualizado', node.updated],
+    ];
+    const dataFields = ['validation', 'record_status', 'status', 'scope', 'version', 'ecosystem', 'assessment', 'exploitation', 'priority', 'cvss', 'epss', 'framework', 'release', 'stix_type', 'revoked', 'deprecated'];
+    for (const key of dataFields) {
+      const value = node.data?.[key];
+      if (['string', 'number', 'boolean'].includes(typeof value) && String(value).length <= 250) fields.push([key.replaceAll('_', ' '), String(value)]);
+    }
+    const metadata = fields.filter(([, value]) => value !== undefined && value !== null && String(value) !== '');
+    body.replaceChildren(make('h3', node.title || 'Entidad sin título'));
+    for (const [label, value] of metadata) body.append(make('p', `${label} · ${String(value).slice(0, 250)}`, 'nc-inspector-meta'));
+    const description = node.data?.description ?? node.data?.summary;
+    if (typeof description === 'string' && description.trim()) {
+      body.append(make('h4', 'Descripción de la fuente'));
+      body.append(make('pre', description.slice(0, 1200), 'nc-fragment'));
+    }
+    const citation = safeGraphCitation(node.citation);
+    byId('ncSourceRef').textContent = citation.display ? `Cita · ${citation.display}` : 'La cita no contiene una referencia relativa segura.';
+    byId('ncFragments').replaceChildren(make('span', 'Las propiedades proceden de la proyección tipada local; no equivalen a estado instalado ni a aplicabilidad confirmada.', 'meta'));
+    byId('ncOpenOriginal').disabled = true; byId('ncGetContext').disabled = true;
+    byId('ncNeighbors').replaceChildren(make('span', 'Consultando relaciones tipadas de un salto…', 'meta'));
+    await expandTypedNeighbors(node.id);
+    if (inspectGate.current(generation)) renderTypedRelations(node.id, generation);
+  }
+
+  function renderTypedRelations(nodeId, generation = inspectGate.begin()) {
+    const target = byId('ncNeighbors'), content = doc.createDocumentFragment(), edges = state.graph.edges.filter(edge => edge.source === nodeId || edge.target === nodeId).slice(0, 100);
+    for (const edge of edges) {
+      const otherId = edge.source === nodeId ? edge.target : edge.source;
+      const other = state.graph.nodes.find(item => item.id === otherId); if (!other) continue;
+      const item = make('div', undefined, 'nc-typed-relation'), button = make('button', undefined); button.type = 'button';
+      const validation = edge.validation && edge.validation !== edge.kind ? ` · ${String(edge.validation).slice(0, 80)}` : '';
+      button.append(make('strong', other.title), make('span', `${edge.relation_type || 'relación'} · ${edge.kind}${validation}`, 'nc-inspector-meta'));
+      button.addEventListener('click', () => dispatchSelection(other.id, other)); item.append(button);
+      const citation = safeGraphCitation(edge.citation);
+      if (citation.display) item.append(make('span', `Cita · ${citation.display}`, 'nc-inspector-meta'));
+      content.append(item);
+    }
+    if (!edges.length) content.append(make('span', 'No hay vecinos visibles. Expande la entidad con el control del grafo o revisa el ámbito y filtros.', 'meta'));
+    if (inspectGate.current(generation)) target.replaceChildren(content);
+  }
+
   async function inspect(id) {
-    const documentId = Number(id);
-    if (!Number.isSafeInteger(documentId) || documentId <= 0) return;
-    state.selected = String(documentId);
+    const numericCandidate = Number(id);
+    const selectedNode = state.graph.nodes.find(node => node.id === String(id) || Number.isSafeInteger(numericCandidate) && node.document_id === numericCandidate);
+    const documentId = selectedNode?.document_id ?? Number(id);
+    if (!Number.isSafeInteger(documentId) || documentId <= 0) {
+      if (state.graph.typed && selectedNode) { await inspectTypedEntity(selectedNode); return; }
+      return;
+    }
+    state.selected = selectedNode?.id ?? String(id);
     updateAccessibleNodeSelection();
     const generation = inspectGate.begin();
     state.selectedDocument = null; resetMarkdownReader('Selecciona un documento para consultar el lector completo.');
-    byId('ncInspectorType').textContent = `Documento ${documentId}`;
+    updateTypedExpansionControl();
+    byId('ncInspectorType').textContent = state.graph.typed ? `${entityKindLabel(selectedNode?.entity_kind || 'document')} · ${documentId}` : `Documento ${documentId}`;
     byId('ncInspectorAnnouncement').textContent = `Cargando metadatos del documento ${documentId}.`;
     byId('ncInspectorBody').replaceChildren(make('p', 'Leyendo metadatos del índice local…', 'nc-inspector-intro'));
     byId('ncFragments').replaceChildren(make('span', 'Recuperando fragmentos citados…', 'meta'));
@@ -1018,6 +1289,13 @@ export function startCommandCenter(doc, fetcher = fetch) {
   }
 
   async function renderNeighbors(documentData, generation) {
+    if (state.graph.typed) {
+      const target = byId('ncNeighbors');
+      target.replaceChildren(make('span', 'Expandiendo vecinos autorizados…', 'meta'));
+      await expandTypedNeighbors(state.selected);
+      if (inspectGate.current(generation)) renderTypedRelations(state.selected, generation);
+      return;
+    }
     const target = byId('ncNeighbors'), entries = new Map();
     for (const edge of state.graph.edges) {
       if (edge.kind !== 'explicit') continue;
@@ -1138,7 +1416,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
 
   function selectOrbitNode(id) {
     const node = state.graph.nodes.find(item => item.id === String(id)); if (!node) return;
-    orbitHover = null; state.selected = node.id; updateAccessibleNodeSelection(); drawOrbit(); setStatus(`Seleccionado: ${node.title}. Pulsa Enter para abrir la ficha.`); dispatchSelection(node.id, node);
+    orbitHover = null; state.selected = node.id; updateAccessibleNodeSelection(); updateTypedExpansionControl(); drawOrbit(); setStatus(`Seleccionado: ${node.title}. Pulsa Enter para abrir la ficha.`); dispatchSelection(node.id, node);
   }
 
   function bindOrbitCanvas() {
@@ -1218,6 +1496,15 @@ export function startCommandCenter(doc, fetcher = fetch) {
 
   function bind() {
     byId('ncTheme').addEventListener('change', event => setTheme(event.target.value));
+    byId('ncGraphMode').addEventListener('change', event => {
+      state.graphMode = event.target.value === 'typed' ? 'typed' : 'documents';
+      byId('ncKindFilter').disabled = state.graphMode !== 'typed';
+      byId('ncTypedGraphNote').hidden = state.graphMode !== 'typed';
+      byId('ncGraphSync').hidden = true;
+      state.selected = null; state.selectedDocument = null; inspectGate.begin(); renderInspectorEmpty();
+      state.panX = 0; state.panY = 0; state.componentFocus = null; state.groupFocus = null;
+      void loadGraph();
+    });
     byId('ncToggleExplorer').addEventListener('click', event => {
       const collapsed = root.dataset.leftCollapsed !== 'true'; root.dataset.leftCollapsed = String(collapsed);
       event.currentTarget.setAttribute('aria-pressed', String(collapsed)); event.currentTarget.setAttribute('aria-expanded', String(!collapsed)); requestAnimationFrame(drawOrbit);
@@ -1256,7 +1543,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
       if (composing) return; clearTimeout(searchTimer);
       searchTimer = setTimeout(() => { void search(); void loadGraph(); }, 280);
     });
-    for (const id of ['ncProject', 'ncSource', 'ncCategory']) byId(id).addEventListener('change', () => { void loadGraph(); if (byId('ncQuery').value.trim()) void search(); });
+    for (const id of ['ncProject', 'ncSource', 'ncCategory', 'ncKindFilter']) byId(id).addEventListener('change', () => { void loadGraph(); if (byId('ncQuery').value.trim()) void search(); });
     byId('ncColor').addEventListener('change', () => { renderHex(); drawOrbit(); });
     byId('ncSuggestions').addEventListener('change', () => void loadGraph());
     byId('ncDepth').addEventListener('change', drawOrbit);
@@ -1273,7 +1560,12 @@ export function startCommandCenter(doc, fetcher = fetch) {
       root.style.fontFamily = event.target.value === 'mono' ? 'ui-monospace,Consolas,monospace' : 'system-ui,Segoe UI,sans-serif'; savePreferences();
     });
     byId('ncCenter').addEventListener('click', () => { state.panX = 0; state.panY = 0; state.zoom = 1; state.componentFocus = null; state.groupFocus = null; byId('ncZoomPref').value = '100'; renderHex(); drawOrbit(); savePreferences(); });
-    byId('ncLoadMore').addEventListener('click', () => { const next = Math.min(1000, state.offset + 120); if (next > state.offset) void loadGraph(next); });
+    byId('ncLoadMore').addEventListener('click', () => {
+      if (state.graphMode === 'typed') { if (state.typedHasMore) void loadTypedGraph(200, {append: true}); return; }
+      const next = Math.min(1000, state.offset + 120); if (next > state.offset) void loadGraph(next);
+    });
+    byId('ncExpandNeighbors').addEventListener('click', () => void expandTypedNeighbors());
+    byId('ncGraphSync').addEventListener('click', () => void syncTypedGraph());
     byId('ncShowLabels').addEventListener('change', event => { state.labels = event.target.checked; drawOrbit(); savePreferences(); });
     byId('ncReducedMotion').addEventListener('change', event => { syncReducedMotion(event.target.checked); savePreferences(); });
     byId('ncLowMotion').addEventListener('click', () => { const toggle = byId('ncReducedMotion'); syncReducedMotion(!toggle.checked); savePreferences(); });
@@ -1288,7 +1580,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
     byId('ncOpenOriginal').addEventListener('click', async () => {
       if (!state.selectedDocument) return;
       byId('ncOpenOriginal').disabled = true;
-      try { await openAuthorizedSource(state.selected, api, setStatus); }
+      try { await openAuthorizedSource(state.selectedDocument.document_id ?? state.selected, api, setStatus); }
       finally { byId('ncOpenOriginal').disabled = false; }
     });
     byId('ncGetContext').addEventListener('click', () => void retrieveContext());

@@ -21,6 +21,7 @@ from .graph import graph_edges_for_nodes, graph_suggestion_edges
 from .indexer import index_all, set_additional_source_enabled_and_sync
 from .onboard import approve_source, preview_source
 from .public_graph import public_graph
+from .knowledge_graph import graph_neighbors, graph_page, sync_graph
 from .security import get_security_entry, search_security
 from .search import (
     SCAN_SOURCE_SUMMARY_MAX_CHARS, get_document, project_scan_summary, recent_documents, related_documents,
@@ -239,7 +240,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
             if path == "/api/doc/content":
                 self._json({"error": "post_json_required"}, 405)
                 return
-            if path in {"/api/search", "/api/context", "/api/decisions", "/api/graph", "/api/cyber/search", "/api/cyber/get", "/api/cyber/sync", "/api/security/search", "/api/security/get", "/api/coding/similar", "/api/coding/patterns"}:
+            if path in {"/api/search", "/api/context", "/api/decisions", "/api/graph", "/api/knowledge-graph", "/api/knowledge-graph/neighbors", "/api/knowledge-graph/sync", "/api/cyber/search", "/api/cyber/get", "/api/cyber/sync", "/api/security/search", "/api/security/get", "/api/coding/similar", "/api/coding/patterns"}:
                 self._json({"error": "POST JSON required for private filters"}, 405)
                 return
             if path in {"/", "/index.html"}:
@@ -500,6 +501,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
             "/api/index", "/api/audit", "/api/link", "/api/project-exclusion",
             "/api/source-preview", "/api/source-approve", "/api/source-impact", "/api/source-toggle",
             "/api/search", "/api/context", "/api/decisions", "/api/graph",
+            "/api/knowledge-graph", "/api/knowledge-graph/neighbors", "/api/knowledge-graph/sync",
             "/api/cyber/search", "/api/cyber/get", "/api/cyber/sync",
             "/api/security/search", "/api/security/get",
             "/api/coding/similar", "/api/coding/patterns",
@@ -520,15 +522,29 @@ class RabanitoHandler(BaseHTTPRequestHandler):
             )
         except ValueError:
             same_loopback_origin = False
-        max_body_length = 16_384 if parsed.path in {"/api/search", "/api/context", "/api/decisions", "/api/graph"} else 2048
+        max_body_length = 16_384 if parsed.path in {"/api/search", "/api/context", "/api/decisions", "/api/graph", "/api/knowledge-graph", "/api/knowledge-graph/neighbors"} else 2048
         if not same_loopback_origin or content_type != "application/json" or not 0 <= content_length <= max_body_length:
             self._json({"error": "same-origin JSON request required"}, 403)
             return
         try:
-            payload = json.loads(self.rfile.read(content_length) or b"{}")
+            if parsed.path.startswith("/api/knowledge-graph"):
+                if parsed.query or parsed.params or parsed.fragment:
+                    raise ValueError("invalid_graph_request_url")
+                def unique_graph_fields(pairs):
+                    result = {}
+                    for key, value in pairs:
+                        if key in result:
+                            raise ValueError("duplicate_graph_json_key")
+                        result[key] = value
+                    return result
+                payload = json.loads(self.rfile.read(content_length) or b"{}", object_pairs_hook=unique_graph_fields)
+            else:
+                payload = json.loads(self.rfile.read(content_length) or b"{}")
             if not isinstance(payload, dict):
                 raise ValueError("JSON object required")
-            if parsed.path == "/api/index":
+            if parsed.path.startswith("/api/knowledge-graph"):
+                self._knowledge_graph(parsed.path, payload)
+            elif parsed.path == "/api/index":
                 self._json(self._dashboard_scan_summary(index_all(self.settings)))
             elif parsed.path == "/api/cyber/search":
                 kev_only = payload.get("kev", False)
@@ -697,7 +713,31 @@ class RabanitoHandler(BaseHTTPRequestHandler):
         except TimeoutError as exc:
             self._json({"error": str(exc)}, 409)
         except (ValueError, TypeError, RecursionError, OSError, json.JSONDecodeError) as exc:
-            self._json({"error": f"request failed: {type(exc).__name__}"}, 400)
+            message = str(exc) if parsed.path.startswith("/api/knowledge-graph") and re.fullmatch(r"[a-z_]{1,100}", str(exc)) else f"request failed: {type(exc).__name__}"
+            self._json({"error": message}, 400)
+
+    def _knowledge_graph(self, path: str, payload: dict) -> None:
+        if path.endswith("/sync"):
+            if set(payload) - {"confirm_graph_sync", "max_inputs", "max_bytes"} or payload.get("confirm_graph_sync") is not True:
+                raise ValueError("explicit_graph_sync_required")
+            self._json(sync_graph(self.settings, max_inputs=payload.get("max_inputs", 1000), max_bytes=payload.get("max_bytes", 32 * 1024 * 1024)))
+            return
+        allowed = {"kind", "q", "category", "project", "project_id", "source", "risk", "since", "until", "limit", "cursor", "suggestions", "include_inactive"}
+        neighbors = path.endswith("/neighbors")
+        if neighbors:
+            allowed |= {"id", "suggestions"}
+        if set(payload) - allowed or ("project" in payload and "project_id" in payload):
+            raise ValueError("invalid_graph_request_fields")
+        options = {key: value for key, value in payload.items() if key not in {"q", "project_id", "id", "suggestions"}}
+        if "q" in payload:
+            options["query"] = payload["q"]
+        if "project_id" in payload:
+            if type(payload["project_id"]) is not int:
+                raise ValueError("invalid_graph_project")
+            options["project"] = payload["project_id"]
+        result = (graph_neighbors(self.settings, payload.get("id"), suggestions=payload.get("suggestions", False), **options)
+                  if neighbors else graph_page(self.settings, suggestions=payload.get("suggestions", False), **options))
+        self._json(result)
 
     def _graph(self, query: dict[str, list[str]]) -> None:
         domain = query.get("domain", ["documents"])[0]

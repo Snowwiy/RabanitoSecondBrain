@@ -16,6 +16,9 @@ All frontend requests use same-origin `127.0.0.1` endpoints exposed by the curre
 | Authorized Markdown reader | `POST /api/doc/content` `{document_id: safe positive int, max_bytes: 1..65536}` | Integrated into this branch from `origin/main`; the UI requests a sanitized, read-only view only after “Leer Markdown”. The synthetic fixture is test-only. |
 | Related docs | `GET /api/related/{positive-id}` | `{results[]}` bounded relation records. |
 | Document graph | `POST /api/graph` `{domain:'documents',limit<=1000,q?,source?,project_id?,category?,suggestions,min_degree?}` | `{nodes[],edges[],node_limit,total_matches,truncated}`. Nodes are active visible documents; paths are relative and private absolute roots are stripped. Edges have explicit/suggested `kind`; suggestions are excluded by default. |
+| Typed Knowledge Graph page | `POST /api/knowledge-graph` `{kind,limit<=200,q?,source?,category?,project_id?,cursor?,suggestions?,risk?,since?,until?,include_inactive?}` | Stable typed nodes and classified/cited relations, `coverage`, keyset cursor and `total_candidates`; strict same-origin POST. |
+| Typed one-hop neighbors | `POST /api/knowledge-graph/neighbors` with page filters plus selected `id` | Authorized anchor, bounded neighbor nodes/edges and next cursor; client caps accumulated view at 1,000 nodes/4,000 edges. |
+| Explicit graph refresh | `POST /api/knowledge-graph/sync` `{confirm_graph_sync:true,max_inputs<=1000,max_bytes<=33554432}` | One user-confirmed projection batch. View loading and page/neighbor reads never trigger synchronization. |
 | Safe source opening | `POST /api/open/{positive-id}` `{}` | Server resolves the indexed active document and re-validates its authorized root before asking the OS to open it. UI never accepts a filesystem path. |
 | Decision/Coding/Security/Cyber panels | Existing POST endpoints in the current dashboard | Continue using `web/knowledge.js`, `web/cyber.js` and legacy handlers; new center opens the existing panels instead of replacing those APIs. |
 
@@ -24,27 +27,36 @@ All frontend requests use same-origin `127.0.0.1` endpoints exposed by the curre
 - Neural Orbit uses only `/api/graph` nodes and edges; coordinates are a deterministic radial projection, not a source of semantic relations.
 - Edge type is preserved. Suggested edges are user-enabled, dashed/orange, and never counted as confirmed.
 - Hex grouping keys are verified project/category/source metadata. Optional “Componente conectado” is computed from explicit graph edges only and is not described as semantic community detection.
-- Tree uses `project_name` as a metadata group and lists explicit graph edges separately. It does not fabricate architecture/component levels.
+- In Knowledge Graph mode, Orbit, Hex and Tree preserve stable typed IDs, all 32 current entity kinds, provenance, citations and four distinct relation classes. Type filters are localized; typed Tree groups by the published type and lists classified relationships separately.
+- Tree uses `project_name` as a metadata group in document mode and lists explicit graph edges separately. It does not fabricate architecture/component levels.
 - `KNOWLEDGE GALAXY 3D` reparents the existing graph controls and canvas in the browser DOM. Its backend/API contract remains the existing `/api/graph` implementation.
 - Inspector queries `/api/doc/{id}` and then a capped `/api/context` request, displaying citation path and line range. “Leer Markdown” sends only the selected indexed ID and byte budget to `/api/doc/content`. The response is a bounded, read-only text view that may redact detectable credentials and absolute paths; it is not an exact export or universal secret detector. The parser builds a bounded DOM from a Markdown subset, treats raw HTML as text, allows only HTTP(S) external links, and resolves internal document links only from returned authorized references. No Markdown body is stored in browser preferences.
 
-## Pending typed Knowledge Graph API
+## Typed Knowledge Graph API — integrated on `Frontend-Design`
 
-The current frontend branch has no `/api/knowledge-graph` endpoint. The backend work concurrent in the original checkout is not part of this base, so the UI intentionally does not assume its response schema. When that backend is integrated, feature-detect through a read-only GET/POST query endpoint; do not invoke a sync route from view loading.
+The isolated branch selectively includes the typed projection, query and relationship modules from published `origin/main`, plus the strict loopback routes and focused tests. This is a selective dependency closure, not a merge of `main`. `/api/graph` remains the document-graph mode; `/api/knowledge-graph` is the typed cross-entity mode.
 
-Recommended read response:
+### Read and navigation requests
+
+All routes are POST-only same-origin JSON requests bound to the loopback server. Graph URLs reject query strings, duplicate JSON keys, non-object bodies and unknown fields. The body cap is 16,384 bytes for page/neighbor requests and 2,048 bytes for the sync request. A page request accepts the following bounded fields:
 
 ```json
-{
-  "projection_available": true,
-  "nodes": [{"id":"doc:123","entity_kind":"document","title":"…","category":"…","source_kind":"obsidian","project_id":null,"validation":"source-backed","updated_at":"…","citation":{"relative_path":"…","line_start":1,"line_end":3}}],
-  "edges": [{"source":"doc:123","target":"project:7","relation_type":"belongs_to","kind":"explicit","validation":"source-backed","citation":"…"}],
-  "total_matches": 1,
-  "truncated": false
-}
+{"kind":"all","limit":180,"suggestions":false,"q":"optional","source":"optional","category":"optional","project_id":7,"cursor":"opaque"}
 ```
 
-Requirements: omit absolute roots and credentials; distinguish explicit, derived, and suggested validation; enforce active-project visibility server-side; include bounded metadata/citations; reject oversized filters; return stable typed IDs. The frontend must retain the current `/api/graph` fallback until this endpoint is committed and integration-tested.
+`kind` accepts the backend's 32 published entity kinds or `all`; `limit` is at most 200 per request. `project` and `project_id` are mutually exclusive. The cursor is bound to filters, authorization, projection generation and route operation. A response includes `schema_version`, `projection_available`, `nodes[]`, `edges[]`, `next_cursor`, `has_more`, `coverage`, `scope_note` and `source_filter_basis`; page responses also include `total_candidates` and `count_basis`. Node identifiers are stable typed IDs. Metadata and citations are bounded; absolute source roots are not returned.
+
+`POST /api/knowledge-graph/neighbors` accepts the page fields plus the selected typed `id`. It returns `anchor_visible`, `hop_depth: 1`, visible endpoint nodes, classified/cited edges and an optional keyset cursor. The UI loads one hop on selection, caps each request at 200 edges and bounds the accumulated view at 1,000 nodes and 4,000 edges. It does not request or render the full 51,000+ candidate set at once. The first page is ordered by stable node ID; use a kind filter or “Cargar más entidades tipadas” to reach later types/pages.
+
+The frontend exposes all 32 kinds published by `rabanito.knowledge_graph.query.KINDS`, with localized labels including ATT&CK records. Neural Orbit, Hex and Knowledge Tree retain the backend kind and stable ID. Hex and Tree display localized labels while keeping the raw kind as the filter key. Document nodes with an authorized `document_id` can use the existing Inspector reader; public/non-document entities cannot be opened as local files.
+
+### Projection refresh and evidence classes
+
+`POST /api/knowledge-graph/sync` accepts exactly `confirm_graph_sync: true` with optional bounded `max_inputs` and `max_bytes`. The UI only exposes this control when `coverage.requires_sync` is true and after a separate confirmation; it requests one batch of at most 1,000 inputs / 32 MiB and does not loop. Opening or filtering the graph is read-only. Sync writes only the derived Knowledge Graph projection; it never modifies Obsidian or project source files.
+
+Edges retain distinct `explicit`, `suggested`, `inferred` and `reviewed_claim` classes plus validation and citation. Suggested edges are opt-in. Reviewed claims and inferred relationships are not presented as confirmed source facts. Topological communities in Orbit/Hex are computed only from loaded explicit links and remain estimates; the backend does not return semantic community labels. The `source` filter describes assertion origin, not project applicability. Imported records and their text are untrusted data.
+
+Focused tests cover request/response contracts, read-only behavior, origin/field/duplicate-key rejection, authorization and exclusions, stale projection handling, cursors, explicit sync, provenance, relationship classes, large pages, transaction rollback and performance budgets. See `UI_TEST_RESULTS.md` for current run results and the real-index browser QA.
 
 ## `POST /api/doc/content` — reconciled and integrated contract
 
@@ -109,5 +121,4 @@ The `origin/main` contract and test record at `5109981a794a41bb7b646beca61ad1104
 - 400/403/404/409/413/503: show the route-specific bounded inline state described above; never retry writes or refresh the index automatically.
 - 409: explain that the indexed source changed or became unavailable without treating stale data as refreshed.
 - Network/5xx/timeout: retain selection only when still present, show stale/error status, and allow explicit retry.
-- Missing typed Knowledge Graph endpoint: disclose “pendiente”; do not synthesize nodes, content, or counts.
 - Fixture server sets `fixture:true` and `X-Rabanito-Fixture`; UI must show the synthetic-only banner whenever fixture stats or graph data is observed.
