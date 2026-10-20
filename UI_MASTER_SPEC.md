@@ -25,7 +25,7 @@ This document records the master mission supplied directly by the user on 2026-1
 1. Run Orbit/Hex/Tree controls through a screen reader and verify browser zoom when reliable tools become available.
 2. Profile canvas frame time and heap at 1080p/1440p with the real-index graph; current API/Node timings are not paint metrics.
 3. Continue real-index filter/navigation coverage across more type families and stale-projection error states without triggering synchronization.
-4. Finish the non-destructive `Frontend-Design` ↔ `main` compatibility report for a future Pull Request. Do not perform the merge.
+4. [x] Prepare the non-destructive `Frontend-Design` ↔ `main` compatibility report for a future Pull Request. Six conflicts are documented; reconcile them in a reviewed PR and rerun the comparison first. Do not perform the merge yet.
 
 ## Workflow and publication constraints
 

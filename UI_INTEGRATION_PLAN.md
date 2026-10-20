@@ -9,9 +9,9 @@
 
 ## Reader and typed Knowledge Graph integration status (2026-10-20)
 
-The authorized Markdown reader and typed Knowledge Graph are integrated in this isolated branch. The reader's add/add contract requirements were reconciled in the frontend branch by retaining both the UI/API requirements and backend security contract. Backend code was selectively copied from published `origin/main` with its focused dependency closures; no backend-wide merge or schema migration was performed. This phase's typed graph changes are currently local and must be committed/pushed to `Frontend-Design` before the compatibility assessment is considered current.
+The authorized Markdown reader and typed Knowledge Graph are integrated in this isolated branch. The reader's add/add contract requirements were reconciled in the frontend branch by retaining both the UI/API requirements and backend security contract. Backend code was selectively copied from published `origin/main` with its focused dependency closures; no backend-wide merge or schema migration was performed. The typed graph phase is published as `6a6cd05e1a310a9d609a0015309705f01c37bc50` on `origin/Frontend-Design`.
 
-1. The reader integration remains published as `a5ea26b9f1156fb3fd879283c77f530b5f61949b`; the previous checkpoint is `515cc257906dbd9bc67bfbab81541b6e966542a0`. `origin/main` remains `5109981a794a41bb7b646beca61ad11045f18ea5`.
+1. The reader integration remains published as `a5ea26b9f1156fb3fd879283c77f530b5f61949b`; the previous checkpoint is `515cc257906dbd9bc67bfbab81541b6e966542a0`; the typed graph phase is `6a6cd05e1a310a9d609a0015309705f01c37bc50`. `origin/main` remains `5109981a794a41bb7b646beca61ad11045f18ea5`.
 2. Typed routes now use the backend's strict contract. Page and one-hop reads are read-only, and refresh is separately confirmed and bounded. The document graph remains available as fallback.
 3. Current phase QA is recorded in `UI_TEST_RESULTS.md`: 82 Node tests, 359 Python tests (1 skipped), real indexed graph checks, read-only Obsidian reader recheck, and 1920×1080 / 2560×1440 visual geometry.
 4. Remaining critical work is browser-side frame-time/heap profiling, screen-reader/browser-zoom verification, and broader non-ATT&CK and stale/error real-index coverage.
@@ -19,10 +19,10 @@ The authorized Markdown reader and typed Knowledge Graph are integrated in this 
 
 ## Future PR compatibility assessment (read-only, 2026-10-20)
 
-- Audited refs before this phase's pending commit: merge base `4474bfc91bcc8145b1573dfa36831c5626c5fd76`, `origin/main` `5109981a794a41bb7b646beca61ad11045f18ea5`, `Frontend-Design` `515cc257906dbd9bc67bfbab81541b6e966542a0`.
-- `git merge-tree --write-tree origin/main HEAD` reported three conflict paths and no worktree merge: `FRONTEND_BACKEND_CONTRACT.md` (add/add), `docs/API_CONTRACT.md` (content), and `rabanito/server.py` (content). Other paths were auto-merged in the simulation.
-- The existing reader route and typed graph routes both need to survive server reconciliation; the contracts should combine UI behavior, endpoint shapes, validation, authorization, bounds, stale behavior, and error requirements. Do not resolve by choosing an entire side.
-- Re-run the simulation against the pushed frontend head and latest `origin/main` before PR preparation. This assessment does not authorize opening a PR or performing a merge.
+- Audited refs: merge base `4474bfc91bcc8145b1573dfa36831c5626c5fd76`, `origin/main` `5109981a794a41bb7b646beca61ad11045f18ea5`, `origin/Frontend-Design` `6a6cd05e1a310a9d609a0015309705f01c37bc50`.
+- `git merge-tree --write-tree origin/main origin/Frontend-Design` reported six conflict paths without modifying the worktree: `FRONTEND_BACKEND_CONTRACT.md` (add/add), `docs/API_CONTRACT.md` (content), `rabanito/cli.py` (content), `rabanito/knowledge_graph/query.py` (add/add), `rabanito/server.py` (content), and `tests/test_knowledge_graph.py` (add/add). Other paths auto-merged in the simulation.
+- The CLI overlap is substantial: the main-side file contains many backend commands/features absent from this branch, so retaining the entire frontend side risks deleting them. The server must preserve the main backend routes/security changes and the reader plus typed graph routes. The query and graph-test conflicts are narrower, reflecting the frontend proof optimization and its test updates. Reconcile both contracts and each file deliberately; do not resolve by choosing an entire side.
+- This is a compatibility assessment only. Re-run against current refs before future PR preparation. It does not authorize opening a PR or performing a merge.
 
 ## Frontend/backend integration matrix
 

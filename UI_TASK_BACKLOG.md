@@ -87,7 +87,7 @@ The user supplied the Neural Command Center mission and acceptance areas in this
 1. Run Orbit, Hex and Tree with a screen reader and verify browser zoom when reliable tools are available.
 2. Use an isolated browser profiler to measure frame time and heap for the 1,000-node view at 1080p/1440p; present timings are query/Node measurements.
 3. Continue real-index tests for other entity kinds, stale projection states and paging boundaries without calling sync/index.
-4. Complete the non-destructive compatibility report for a future Pull Request; no merge is authorized in this phase.
+4. [x] Complete the non-destructive compatibility report for a future Pull Request. Six conflict paths were identified and documented; manual reconciliation and a fresh comparison remain required before PR review. No merge was performed.
 
 ## Explicitly out of scope here
 

@@ -2,7 +2,7 @@
 
 ## Current state — 2026-10-20
 
-- Continue only in the isolated linked worktree on `Frontend-Design`. The last reader phase is published at `a5ea26b9f1156fb3fd879283c77f530b5f61949b`, followed by checkpoint `515cc257906dbd9bc67bfbab81541b6e966542a0`. This phase's typed Knowledge Graph integration and QA are currently validated locally and are being prepared for a normal push to the same branch.
+- Continue only in the isolated linked worktree on `Frontend-Design`. The last reader phase is `a5ea26b9f1156fb3fd879283c77f530b5f61949b`, followed by checkpoint `515cc257906dbd9bc67bfbab81541b6e966542a0`. The validated typed Knowledge Graph phase is committed and published as `6a6cd05e1a310a9d609a0015309705f01c37bc50`.
 - `origin/main` is still `5109981a794a41bb7b646beca61ad11045f18ea5`. Do not merge, force push, or modify the main checkout or Sol's backend worktree.
 - The typed graph uses `POST /api/knowledge-graph`, `/api/knowledge-graph/neighbors`, and separately confirmed `/api/knowledge-graph/sync`. All 32 published entity kinds are filterable; page/neighbor reads are read-only and sync is one bounded, separately confirmed projection batch.
 - Neural Orbit, Hex Knowledge, and Knowledge Tree use typed IDs, localized entity labels, citations/provenance and relation classes. Existing document graph and Galaxy behavior remain available. The UI bounds accumulated typed graphs at 1,000 nodes / 4,000 edges and requests neighbors one hop at a time.
@@ -12,9 +12,10 @@
 
 ## Future integration assessment — do not merge yet
 
-- Audited refs: `origin/main` `5109981a794a41bb7b646beca61ad11045f18ea5`; `Frontend-Design` was `515cc257906dbd9bc67bfbab81541b6e966542a0` before this phase's pending commit. Merge base: `4474bfc91bcc8145b1573dfa36831c5626c5fd76`.
-- A read-only `git merge-tree --write-tree origin/main HEAD` simulation found three conflict paths: `FRONTEND_BACKEND_CONTRACT.md` (add/add), `docs/API_CONTRACT.md` (content), and `rabanito/server.py` (content). No merge was run. Preserve both API contracts and reconcile the duplicate reader route with typed graph routes during a separately authorized PR review.
-- Other changes auto-merged in the simulation. Re-run the compatibility simulation after this phase is published and before preparing a PR; review any new backend commits and exact conflicts then.
+- Audited refs: `origin/main` `5109981a794a41bb7b646beca61ad11045f18ea5`; `origin/Frontend-Design` `6a6cd05e1a310a9d609a0015309705f01c37bc50`. Merge base: `4474bfc91bcc8145b1573dfa36831c5626c5fd76`.
+- A read-only `git merge-tree --write-tree origin/main origin/Frontend-Design` simulation at the published head found six conflict paths: `FRONTEND_BACKEND_CONTRACT.md` (add/add), `docs/API_CONTRACT.md` (content), `rabanito/cli.py` (content), `rabanito/knowledge_graph/query.py` (add/add), `rabanito/server.py` (content), and `tests/test_knowledge_graph.py` (add/add). No merge was run.
+- The CLI/server overlaps are substantial: `main` contains additional backend commands and routes. A future PR must preserve those along with the frontend reader route, typed graph routes, main performance/security behavior and both test suites. The query conflict currently represents the frontend's bounded performance proof adjustment; the graph test conflict is limited to proof/test updates. Manual, file-by-file reconciliation is required; do not select one whole branch.
+- This report is an assessment, not a merge or PR. Repeat the simulation against current refs before PR preparation and review any new backend commits and exact conflicts then.
 
 ## Remaining priorities
 
