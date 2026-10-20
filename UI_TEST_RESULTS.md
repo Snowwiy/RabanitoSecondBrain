@@ -1,6 +1,19 @@
 # UI test results
 
-Last verified: 2026-10-17. All browser checks used the loopback-only synthetic fixture server in `tests/neural_command_center_fixture_server.mjs`; the live index, Obsidian vault and operational SQLite database were not queried or modified.
+Last verified: 2026-10-20. Earlier browser checks below used the loopback-only synthetic fixture server; the Markdown integration checks in the latest section used an isolated loopback UI server with the original index opened read-only.
+
+## Authorized Markdown endpoint integration (2026-10-20)
+
+- Fetched `origin`; `origin/main` was `5109981a794a41bb7b646beca61ad11045f18ea5`, and `origin/Frontend-Design` was `1eaf2c1c3814bb7bb5680ca619a89b17e78aec99` before integration edits. The worktree started clean on `Frontend-Design`. `git merge-tree` showed only the add/add conflict in `FRONTEND_BACKEND_CONTRACT.md`; both API/UI requirements and endpoint/security details were preserved in the unified contract. No full merge was run.
+- Selectively integrated `rabanito/document_content.py`, its 35 focused tests and the `/api/doc/content` server route plus GET 405 behavior. The existing DB implementation, settings, authorization helpers, renderer and other backend routes were not replaced.
+- `python -B -m unittest -v tests.test_document_content` — **35 passed**. Coverage includes read-only source/database access, same-origin/JSON/request framing, safe IDs, size limits, UTF-8 and partial lines, credential/path redaction, stale hash/source behavior, current authorization/exclusions/project visibility, reparse points/symlinks, references and structured HTTP errors.
+- `python -B -m unittest discover -s tests -q` — **325 run, 324 passed, 1 skipped, 0 failed**.
+- `node --test tests/test_cyber_ui.mjs tests/test_graph_filter.mjs tests/test_neural_command_center.mjs tests/test_neural_command_center_fixture_api.mjs` — **76 passed, 0 failed, 0 skipped**. Includes exact response and reference schema validation.
+- Python bytecode and JavaScript syntax checks passed; `git diff --check` passed.
+- Read-only loopback HTTP checks returned exact valid responses for one authorized non-empty document from each source class: Obsidian, project and internal memory. Responses stayed within the requested byte budget. Negative checks returned GET 405, extra caller path field 400, wrong Origin 403, unavailable ID 404, and a 128-byte capped read.
+- Visible browser QA at 487×884 selected an authorized real Obsidian note and loaded Markdown in the Inspector. A second real note rendered 35,120 bytes with metadata, cited fragments, explicit neighbors and 100 recognized references. Safe DOM inspection found no script/style/iframe/object/embed/img/svg elements; the page did not expose absolute source roots, and browser console logs were empty. The screenshot showed a readable stacked Inspector at this viewport. No note content or screenshot is included in this record.
+- The read-only server was stopped and its loopback port closed. Post-run SQLite `PRAGMA integrity_check` returned `ok`, with zero foreign-key errors. Only the authorized content route and read-only data endpoints were reachable during browser QA; no index/sync/write operation was enabled or invoked.
+- Open gaps: assistive-technology certification, true browser zoom, measured canvas frame-time/heap, and broader real-index search/filter and legacy-panel QA.
 
 ## Backend reader integration preflight (2026-10-18)
 
@@ -55,18 +68,18 @@ Visible QA covered desktop-sized 1264×715 and 380×787 screenshots. In the narr
 - Community mode on the synthetic fixture showed 12 groups from the 180 graph nodes/179 explicit edges loaded in the initial view (the fixture contains 1,000 matching docs, but graph loading is progressive). Hex rendered cards in numeric order (`Comunidad 1` through `Comunidad 12`), exposed group names/counts/basis in the accessibility tree, and selecting a card switched to Orbit with the estimate disclaimer in live status. Screenshot review at 1264×715 found the grid and existing three-panel layout legible. All data was synthetic.
 - Algorithm-only Node smoke on a separate deterministic synthetic graph of 1,000 nodes and 6,955 explicit edges returned 4 groups in 44 ms on this run. This is not a browser frame-time/heap profile or a production-data benchmark.
 
-## Markdown reader adapter phase (2026-10-17)
+## Markdown reader adapter phase (2026-10-17 — synthetic-only before endpoint integration)
 
 - The parser and bounded synthetic API route pass tests; browser QA at 694px showed headings, lists, tables, code, an authorized internal navigation button, a safe HTTPS link and inert raw-HTML text. Search found 3 matches and keyboard navigation advanced to match 2.
 - DOM inspection found no injected `img` or `script` elements, and the rendered article had no horizontal overflow at that viewport. The `--no-markdown` fixture returned 404 and retained the existing metadata/context view.
 - A loopback fixture that reset the content request produced the visible status “No se pudo leer el Markdown: Failed to fetch”; the selected document metadata remained available, the read button was re-enabled, and the empty reader stayed hidden.
 - The browser driver did not provide a screen-reader certification or reliable browser-zoom control. Production body-reading remains unverified because the tested backend has no `/api/doc/content` route; fixture content is synthetic only.
 
-## Still unverified
+## Remaining unverified work after reader integration
 
 - Full-width screenshots at 1920×1080 / 2560×1440; geometry was checked without horizontal overflow, but the screenshot provider caps captures at 1280px.
 - Browser zoom and screen-reader testing.
 - Large real index / 10k+ graph performance. Current cap and synthetic fixture do not prove production-scale performance.
 - Orbit and Galaxy now reuse derived graph data when their graph/layout inputs are unchanged. The synthetic 1,000-node render and interaction smoke passed, but no frame-time/memory profile or real-index benchmark has been recorded.
-- Production full-body Markdown reading remains blocked: the current production API returns metadata plus bounded context and has no `POST /api/doc/content`. The UI adapter passed synthetic-fixture browser/API checks; a separate 404 fixture confirmed the unavailable state preserves metadata and cited fragments.
+- The real Markdown reader is integrated and browser-verified for Obsidian; this phase did not claim full 1080p/1440p live-note screenshots or broad real-index search/filter coverage.
 - New typed cross-entity graph API; it is absent from this branch baseline.

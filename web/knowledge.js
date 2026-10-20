@@ -181,6 +181,54 @@ export function parseSafeMarkdown(markdown, references = []) {
   return blocks;
 }
 
+const MARKDOWN_RESPONSE_KEYS = ['document_id', 'content_markdown', 'bytes_returned', 'truncated', 'references'];
+const MARKDOWN_REFERENCE_KEYS = ['target_document_id', 'title', 'target_raw', 'relative_path', 'status'];
+
+function hasExactKeys(value, keys) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+}
+
+function safeDocumentPath(value) {
+  if (typeof value !== 'string' || !value || value.length > 1000
+      || /^[\\/]|^~(?:[\\/]|$)|^[a-z][a-z\d+.-]*:/i.test(value)) return false;
+  const parts = value.replace(/\\/g, '/').split('/');
+  return parts.every(part => part && part !== '.' && part !== '..' && !/[<>:"|?*\x00-\x1f\x7f]/.test(part) && !/[ .]$/.test(part));
+}
+
+function safeReferenceTarget(value) {
+  return typeof value === 'string' && value.length > 0 && value.length <= 1000
+    && !/^[\\/]|^~|^[a-z][a-z\d+.-]*:/i.test(value)
+    && !/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(value)
+    && !/[\x00-\x1f\x7f]/.test(value);
+}
+
+export function validateMarkdownResponse(payload, expectedDocumentId) {
+  if (!hasExactKeys(payload, MARKDOWN_RESPONSE_KEYS)
+      || !Number.isSafeInteger(expectedDocumentId) || expectedDocumentId <= 0
+      || payload.document_id !== expectedDocumentId
+      || typeof payload.content_markdown !== 'string' || payload.content_markdown.length > MARKDOWN_MAX_CHARACTERS
+      || !Number.isSafeInteger(payload.bytes_returned) || payload.bytes_returned < 0
+      || payload.bytes_returned > MARKDOWN_MAX_CHARACTERS || typeof payload.truncated !== 'boolean'
+      || !Array.isArray(payload.references) || payload.references.length > 512) {
+    throw new Error('La respuesta del lector no cumple el contrato seguro documentado.');
+  }
+  const actualBytes = new TextEncoder().encode(payload.content_markdown).byteLength;
+  if (actualBytes !== payload.bytes_returned || actualBytes > MARKDOWN_MAX_CHARACTERS) {
+    throw new Error('La longitud UTF-8 de la respuesta no cumple el límite del lector.');
+  }
+  for (const reference of payload.references) {
+    if (!hasExactKeys(reference, MARKDOWN_REFERENCE_KEYS)
+        || !Number.isSafeInteger(reference.target_document_id) || reference.target_document_id <= 0
+        || typeof reference.title !== 'string' || !reference.title || reference.title.length > 1000
+        || !safeReferenceTarget(reference.target_raw) || !safeDocumentPath(reference.relative_path)
+        || reference.status !== 'resolved') {
+      throw new Error('La respuesta incluye una referencia fuera del contrato autorizado.');
+    }
+  }
+  return payload.content_markdown;
+}
+
 export async function openAuthorizedSource(documentId, request, setStatus) {
   const failure = 'No se pudo confirmar la apertura de la fuente autorizada. Reintenta desde el panel.';
   try {
@@ -440,24 +488,30 @@ export function startCommandCenter(doc, fetcher = fetch) {
     const documentId = Number(state.selected), gate = markdownGate.begin();
     if (!Number.isSafeInteger(documentId) || documentId <= 0 || !state.selectedDocument) return;
     const reader = byId('ncMarkdownReader'), button = byId('ncReadMarkdown');
-    reader.hidden = false; button.disabled = true; byId('ncMarkdownStatus').textContent = 'Solicitando Markdown completo a la API local…';
+    reader.hidden = false; button.disabled = true; byId('ncMarkdownStatus').textContent = 'Leyendo la vista Markdown autorizada…';
     byId('ncMarkdownSearch').hidden = true; byId('ncMarkdownContent').replaceChildren(); byId('ncMarkdownReferences').replaceChildren();
     try {
       const payload = await api('/api/doc/content', {document_id: documentId, max_bytes: MARKDOWN_MAX_CHARACTERS});
       if (!markdownGate.current(gate) || String(state.selected) !== String(documentId)) return;
-      const content = payload?.content_markdown;
-      if (!Number.isSafeInteger(payload?.document_id) || payload.document_id !== documentId || typeof content !== 'string' || !Array.isArray(payload?.references) || payload.references.length > 512 || typeof payload?.truncated !== 'boolean' || !Number.isSafeInteger(payload?.bytes_returned)) throw new Error('La respuesta del lector no cumple el contrato seguro documentado.');
-      const actualBytes = new TextEncoder().encode(content).byteLength;
-      if (actualBytes > MARKDOWN_MAX_CHARACTERS || payload.bytes_returned > MARKDOWN_MAX_CHARACTERS) throw new Error('La respuesta supera el límite de 65,536 bytes.');
-      if (actualBytes !== payload.bytes_returned) throw new Error('La longitud UTF-8 de la respuesta no coincide con bytes_returned.');
+      const content = validateMarkdownResponse(payload, documentId);
       const tree = parseSafeMarkdown(content, payload.references);
       byId('ncMarkdownContent').replaceChildren(renderMarkdownContent(tree)); renderMarkdownReferences(payload.references);
       byId('ncMarkdownSearch').hidden = false; byId('ncMarkdownQuery').value = ''; byId('ncMarkdownSearchStatus').textContent = 'Escribe un término para buscar en el documento actual.';
-      byId('ncMarkdownStatus').textContent = payload.truncated ? `Vista parcial: ${Number(payload.bytes_returned).toLocaleString('es-MX')} bytes. El servidor indicó que el documento continúa.` : `Markdown del documento ${documentId} cargado · ${Number(payload.bytes_returned).toLocaleString('es-MX')} bytes.`;
+      byId('ncMarkdownStatus').textContent = payload.truncated ? `Vista parcial: ${Number(payload.bytes_returned).toLocaleString('es-MX')} bytes. El servidor indicó que el documento continúa.` : `Vista Markdown del documento ${documentId} cargada · ${Number(payload.bytes_returned).toLocaleString('es-MX')} bytes.`;
     } catch (error) {
       if (!markdownGate.current(gate) || String(state.selected) !== String(documentId)) return;
       const message = String(error.message || 'error de API');
-      const status = message.includes('HTTP 404') ? 'El servidor no ofrece todavía el endpoint autorizado de Markdown. Puedes seguir usando metadatos, fragmentos citados y la fuente autorizada.' : message.includes('HTTP 413') ? 'El servidor rechazó la lectura por tamaño; el límite del lector es 65,536 bytes.' : `No se pudo leer el Markdown: ${message.slice(0, 180)}`;
+      const httpStatus = /^HTTP (\d{3})$/.exec(message)?.[1];
+      const status = ({
+        400: 'La API rechazó la solicitud o la codificación del documento. La fuente original no se modificó.',
+        403: 'La API local rechazó el origen o el formato de la solicitud. Abre el dashboard desde el mismo servidor local.',
+        404: 'El documento no está disponible o ya no pertenece al ámbito autorizado. Sus metadatos y citas permanecen en el inspector.',
+        409: 'La fuente cambió o dejó de estar disponible desde la indexación. No se reindexó automáticamente; actualiza el índice explícitamente antes de volver a leer.',
+        413: 'La nota supera el tamaño configurado para lectura o el límite del lector de 65,536 bytes. El resto del inspector permanece disponible.',
+        503: 'El índice local no está disponible. La API no lo creó ni lo actualizó.',
+      })[httpStatus] || (message.includes('contrato seguro') || message.includes('referencia fuera del contrato') || message.includes('no cumple el límite')
+        ? 'La respuesta local no cumple el contrato seguro del lector. No se mostró su contenido.'
+        : 'No se pudo leer el Markdown. Los metadatos y fragmentos citados permanecen disponibles; puedes volver a intentarlo.');
       byId('ncMarkdownStatus').textContent = status; reader.hidden = true; byId('ncMarkdownContent').replaceChildren(); byId('ncMarkdownReferences').replaceChildren();
     } finally { if (markdownGate.current(gate) && String(state.selected) === String(documentId)) button.disabled = false; }
   }

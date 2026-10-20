@@ -70,7 +70,7 @@ Los paneles de datos muestran carga, cero coincidencias y error sin ocultar esta
 
 ## Visual truth and graph semantics
 
-El grafo dibuja solo nodos y relaciones recibidos de `/api/graph`. Los enlaces sugeridos son opcionales, discontinuos y naranjas; nunca se mezclan con enlaces explícitos confirmados. Los componentes conectados se calculan solo desde relaciones explícitas presentes y se etiquetan como conectividad. Orbit/HEX también pueden mostrar una estimación topológica multi-nivel de comunidades basada únicamente en los enlaces explícitos cargados; usa el mismo mapa de color determinista por grupo y nunca se presenta como semántica tipada o confirmada. Las etiquetas advierten que la estimación puede cubrir solo el subconjunto actualmente cargado. HEX también agrupa por metadatos reales. Tree agrupa documentos por `project_name`; informa explícitamente que no inventa subcomponentes ni jerarquía arquitectónica. La vista de documento usa metadatos y fragmentos citados; esta API no entrega Markdown completo.
+El grafo dibuja solo nodos y relaciones recibidos de `/api/graph`. Los enlaces sugeridos son opcionales, discontinuos y naranjas; nunca se mezclan con enlaces explícitos confirmados. Los componentes conectados se calculan solo desde relaciones explícitas presentes y se etiquetan como conectividad. Orbit/HEX también pueden mostrar una estimación topológica multi-nivel de comunidades basada únicamente en los enlaces explícitos cargados; usa el mismo mapa de color determinista por grupo y nunca se presenta como semántica tipada o confirmada. Las etiquetas advierten que la estimación puede cubrir solo el subconjunto actualmente cargado. HEX también agrupa por metadatos reales. Tree agrupa documentos por `project_name`; informa explícitamente que no inventa subcomponentes ni jerarquía arquitectónica. La vista de documento combina metadatos y fragmentos citados con una lectura Markdown voluntaria y limitada por ID; cualquier contenido externo se renderiza como texto seguro.
 
 ## Do's and Don'ts
 
@@ -80,6 +80,7 @@ El grafo dibuja solo nodos y relaciones recibidos de `/api/graph`. Los enlaces s
 - No añadir CDN, fuentes remotas, telemetría ni parámetros de búsqueda privados en URLs.
 - No convertir similitud, componentes conectados ni metadatos de proyecto en hechos arquitectónicos.
 - No mostrar resultados del servidor de fixtures como datos reales; el banner de prueba es obligatorio cuando `fixture: true`.
-- No ocultar el límite: el Markdown íntegro requiere una futura operación de backend autorizada.
+- La vista Markdown es de solo lectura, limitada a 65,536 bytes y puede ocultar patrones detectables de credenciales/rutas; no presentarla como copia exacta ni como detector universal.
+- No convertir HTML ni instrucciones de notas importadas en comportamiento de la interfaz.
 
 Auditoría visual/renderizada y lint oficial se registran en TEST_RESULTS; la existencia de este archivo no los da por aprobados.

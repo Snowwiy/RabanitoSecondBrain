@@ -14,6 +14,7 @@ from .changes import recent_document_changes
 from .config import SETTINGS_WRITE_LOCK, Settings, save_settings
 from .cyber import cyber_status, get_vulnerability, search_vulnerabilities, sync_source
 from .coding_memory import recurring_patterns, similar_experiences
+from .document_content import DocumentContentError, document_content
 from .db import Database
 from .decisions import list_memory_records
 from .graph import graph_edges_for_nodes, graph_suggestion_edges
@@ -47,6 +48,84 @@ class RabanitoHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(raw)
+
+    def _document_content_request(self, parsed) -> None:
+        # Keep this bounded reader isolated from the established POST contracts.
+        self.close_connection = True
+        body_consumed = False
+
+        def reject(code, status):
+            lengths = self.headers.get_all("Content-Length", [])
+            if (not body_consumed and len(lengths) == 1 and re.fullmatch(r"[0-9]{1,10}", lengths[0])
+                    and 0 < int(lengths[0]) <= 2048 and not self.headers.get_all("Transfer-Encoding", [])):
+                previous_timeout = self.connection.gettimeout()
+                try:
+                    self.connection.settimeout(1)
+                    self.rfile.read(int(lengths[0]))
+                except OSError:
+                    pass
+                finally:
+                    self.connection.settimeout(previous_timeout)
+            self._json({"error": code}, status)
+
+        try:
+            if parsed.query or parsed.params or parsed.fragment:
+                raise DocumentContentError(400, "json_body_required")
+            if (len(self.headers.get_all("Host", [])) != 1
+                    or len(self.headers.get_all("Origin", [])) != 1
+                    or not _request_host_is_loopback(self.headers.get("Host", ""), self.server.server_address[1])):
+                raise DocumentContentError(403, "same_origin_required")
+            try:
+                origin = urlsplit(self.headers["Origin"])
+                host = urlsplit("http://" + self.headers["Host"])
+                valid_origin = (origin.scheme == "http" and not origin.username and not origin.password
+                    and not origin.path and not origin.query and not origin.fragment
+                    and _is_loopback_host(origin.hostname or "") and origin.hostname == host.hostname
+                    and origin.port == host.port == self.server.server_address[1])
+            except ValueError:
+                valid_origin = False
+            if not valid_origin:
+                raise DocumentContentError(403, "same_origin_required")
+            if (len(self.headers.get_all("Content-Type", [])) != 1
+                    or self.headers["Content-Type"].split(";", 1)[0].strip().casefold() != "application/json"):
+                raise DocumentContentError(403, "json_content_type_required")
+            lengths = self.headers.get_all("Content-Length", [])
+            if (len(lengths) != 1 or not re.fullmatch(r"[0-9]{1,10}", lengths[0])
+                    or self.headers.get_all("Transfer-Encoding", [])):
+                raise DocumentContentError(400, "invalid_request_framing")
+            length = int(lengths[0])
+            if length > 2048:
+                raise DocumentContentError(413, "request_size_limit")
+            if not length:
+                raise DocumentContentError(400, "invalid_document_request")
+            old_timeout = self.connection.gettimeout()
+            try:
+                self.connection.settimeout(3)
+                body_consumed = True
+                body = self.rfile.read(length)
+            finally:
+                self.connection.settimeout(old_timeout)
+            if len(body) != length:
+                raise DocumentContentError(400, "incomplete_request_body")
+
+            def unique_fields(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError("duplicate_key")
+                    result[key] = value
+                return result
+
+            payload = json.loads(body.decode("utf-8"), object_pairs_hook=unique_fields)
+            if not isinstance(payload, dict) or set(payload) != {"document_id", "max_bytes"}:
+                raise DocumentContentError(400, "invalid_document_request")
+            self._json(document_content(self.settings, payload["document_id"], payload["max_bytes"]))
+        except DocumentContentError as exc:
+            reject(exc.code, exc.status)
+        except (UnicodeError, ValueError, TypeError, RecursionError):
+            reject("invalid_document_request", 400)
+        except OSError:
+            reject("document_request_unavailable", 409)
 
     def _project_root_for_id(self, value: object) -> str | None:
         if value in (None, ""):
@@ -157,6 +236,9 @@ class RabanitoHandler(BaseHTTPRequestHandler):
         path = parsed.path
         query = parse_qs(parsed.query)
         try:
+            if path == "/api/doc/content":
+                self._json({"error": "post_json_required"}, 405)
+                return
             if path in {"/api/search", "/api/context", "/api/decisions", "/api/graph", "/api/cyber/search", "/api/cyber/get", "/api/cyber/sync", "/api/security/search", "/api/security/get", "/api/coding/similar", "/api/coding/patterns"}:
                 self._json({"error": "POST JSON required for private filters"}, 405)
                 return
@@ -407,10 +489,13 @@ class RabanitoHandler(BaseHTTPRequestHandler):
             self._json({"error": f"request failed: {type(exc).__name__}"}, 400)
 
     def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/doc/content":
+            self._document_content_request(parsed)
+            return
         if not _request_host_is_loopback(self.headers.get("Host", ""), self.server.server_address[1]):
             self._json({"error": "loopback Host required"}, 403)
             return
-        parsed = urlparse(self.path)
         if parsed.path not in {
             "/api/index", "/api/audit", "/api/link", "/api/project-exclusion",
             "/api/source-preview", "/api/source-approve", "/api/source-impact", "/api/source-toggle",

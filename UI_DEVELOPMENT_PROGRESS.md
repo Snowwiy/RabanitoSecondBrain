@@ -2,7 +2,7 @@
 
 ## Current checkpoint
 
-- Last updated: 2026-10-18.
+- Last updated: 2026-10-20.
 - Worktree: dedicated `Frontend-Design` linked worktree (local path intentionally omitted from published docs).
 - Branch: `Frontend-Design`; base audited at `4474bfc91bcc8145b1573dfa36831c5626c5fd76`.
 - Frontend-only edits; no source edits in the original Second Brain checkout, Sol’s backend work, the SQLite index, Obsidian, Hermes, or other projects.
@@ -19,7 +19,7 @@
 - Knowledge Tree grouped by project metadata with explicit relation list; no fabricated architecture levels.
 - Existing Knowledge Galaxy 3D controls/canvas are moved into the central tab and retained.
 - Search uses `/api/search`; Inspector uses `/api/doc/{id}` and capped `/api/context`, includes relative-path citations and links, uses text-only rendering, and opens originals only through `/api/open/{id}`.
-- Inspector now has a user-triggered Markdown reader adapter for the proposed `POST /api/doc/content` contract. It validates ID/byte fields, parses a bounded Markdown subset through safe DOM constructors, treats raw HTML as text, limits external URLs and resolves internal links only through response references. If production returns 404, it states the backend blocker and preserves the existing Inspector.
+- Inspector's user-triggered Markdown reader now connects to the real `POST /api/doc/content` route. It validates the exact response schema, ID/byte fields and references; parses a bounded Markdown subset through safe DOM constructors; treats raw HTML as text; limits external URLs; and resolves internal links only through returned references. Missing, stale, unauthorized and size errors preserve metadata/context without exposing server details.
 - Existing legacy panels remain available in a collapsed workbench.
 - Local fixture-only server for browser QA marks synthetic payloads and disables source opening.
 - Added and allowlisted the master specification, architecture, API contract, integration plan, backlog, test record and next-session continuity documents; no personal absolute paths in the published records.
@@ -78,9 +78,9 @@
 
 ## Next action
 
-Continue through the open priorities in `UI_TASK_BACKLOG.md`; do not treat the passing tests or this checkpoint as completion of the full redesign. The reader adapter is ready for backend integration. The route now exists in published `origin/main`, but `Frontend-Design` lacks it and a contract-file add/add conflict blocks integration. Keep the metadata/context fallback. Do not touch the original worktree.
+The 2026-10-20 integration checkpoint supersedes the preflight below: the conflict is reconciled and the endpoint is now integrated and validated on `Frontend-Design`. Commit and push this phase only to that branch, then continue through the open priorities in `UI_TASK_BACKLOG.md`. Passing tests do not complete the full redesign. Do not touch the original worktree or `main`.
 
-## Markdown reader adapter phase (2026-10-17)
+## Markdown reader adapter phase (2026-10-17 — synthetic-only before endpoint integration)
 
 - Added a bounded parser for headings, paragraphs, lists, tables, fenced code, block quotes, rules, inline code/emphasis, safe external links and reference-authorized internal links. It caps input at 65,536 characters, 4,096 lines, 2,048 blocks, 200 list/table rows per block and 512 reference records. It creates DOM elements/text nodes only; no `innerHTML` path was added.
 - Added the user-triggered `POST /api/doc/content` adapter with strict selected-ID/response validation, UTF-8 byte accounting, stale-request gates, loading, 404/413/contract/network error states, and a responsive in-document search with highlighted matches and previous/next navigation.
@@ -89,9 +89,20 @@ Continue through the open priorities in `UI_TASK_BACKLOG.md`; do not treat the p
 - The synthetic browser rendered headings, list items, table headers/rows, code, a safe external link, internal reference, source citation and inert `<img ... onerror=...>` text. In-document search found three occurrences and navigation advanced from 1/3 to 2/3. Browser DOM checks found zero `<img>`/`<script>` elements and no horizontal overflow at the 694px browser viewport. Missing-endpoint fixture showed the 404 fallback and retained metadata/fragments.
 - Final validation: 75 Node tests passed; syntax checks for the UI, fixture server and changed test modules passed; `git diff --check` passed. The premium strict audit returned 32 markup-only `actionless-button` findings (0 warnings), all matched to real ID-bound or delegated JavaScript handlers. Synthetic browser QA at 694px confirmed keyboard reader search, internal selection, raw HTML remaining text, no injected image/script nodes and no horizontal overflow; 404 and transport-failure fixtures retained metadata/context and showed recoverable feedback. Screen-reader certification and true browser zoom remain unverified.
 
-## Backend reader integration preflight (2026-10-18)
+## Backend reader integration preflight (2026-10-18 — resolved in the 2026-10-20 phase below)
 
 - `git fetch origin` confirmed `main` at `5109981a794a41bb7b646beca61ad11045f18ea5` and `Frontend-Design` at `4dd4a23f647a067cff862496a21fcecb502b8717`.
 - Read-only inspection confirmed the endpoint implementation in `origin/main`. `git merge-tree --write-tree Frontend-Design origin/main` found an add/add conflict in `FRONTEND_BACKEND_CONTRACT.md`.
 - Per the requested conflict stop rule, no merge, cherry-pick, endpoint code copy, real-source read or endpoint test was performed. The UI branch remains unintegrated; the original checkout and its pending work were not modified.
 - Resolution required: reconcile both contract files, then import only the reader module, endpoint-specific server route and focused tests. Do not merge the full backend commit wholesale.
+
+## Authorized Markdown endpoint integration (2026-10-20)
+
+- Rechecked the clean `Frontend-Design` starting point and fetched `origin`. `origin/main` remains at `5109981a794a41bb7b646beca61ad11045f18ea5`; the add/add contract conflict was resolved by preserving the UI API/view contract and importing the complete backend request, response, read, freshness, authorization, redaction and error requirements.
+- Selectively imported `rabanito/document_content.py`, its focused tests and only the `/api/doc/content` server route/GET 405 behavior. No main merge, migration, unrelated backend module, project source, Obsidian file, or database write was performed.
+- Connected the existing inspector button to the production route, added exact JSON/reference validation and local, non-sensitive error copy for 400/403/404/409/413/503. The existing safe Markdown renderer remains the sole renderer; fixtures remain test-only.
+- Loopback API verification read one authorized active document from each configured source class (Obsidian, projects, internal memory), accepted the exact contract, and kept byte budgets. Negative checks covered GET 405, an extra caller `path` field 400, wrong Origin 403, missing ID 404 and a 128-byte read budget.
+- Browser QA in the visible local dashboard used the actual source DB in read-only mode. It rendered a real Obsidian note with metadata and 100 recognized references, and a second 35,120-byte note with Markdown plus inspector metadata, cited fragments and explicit neighbors. The reader DOM contained semantic Markdown tags and no script/style/iframe/object/embed/img/svg elements; no absolute source root appeared in the page. Browser console log was empty. The screenshot viewport was 487×884; previously recorded 1920×1080 and 2560×1440 checks were geometry checks, not screenshots of this live note.
+- Automated validation: focused Python endpoint tests **35 passed**; full Python suite **325 run, 324 passed, 1 skipped**; Node UI suite **76 passed, 0 failed**; syntax/bytecode checks and `git diff --check` passed.
+- The temporary UI server exposed only read APIs plus `/api/doc/content`, used the original DB and roots without changing settings, and was stopped after QA. A read-only integrity check returned `ok` with zero foreign-key errors; the isolated listener is closed. Existing pending Sol changes remain in the separate original checkout.
+- Still open: assistive-technology certification, browser zoom, real-index search/filter coverage beyond this reader flow, typed Knowledge Graph integration, and measured browser frame-time/heap at large graph sizes.

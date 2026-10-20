@@ -10,7 +10,7 @@ const createRequestGate = () => { let n=0; return {begin:()=>++n,current:id=>id=
 const requestJson = async () => ({});
 const safeReference = value => { try { const url = new URL(value); return ['https:','http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null; } catch { return null; } };
 `;
-const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, openAuthorizedSource, groupCommandNodes, explicitAdjacency, detectGraphCommunities, parseSafeMarkdown};').toString('base64')}`);
+const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, openAuthorizedSource, groupCommandNodes, explicitAdjacency, detectGraphCommunities, parseSafeMarkdown, validateMarkdownResponse};').toString('base64')}`);
 const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 
 test('normalization keeps only real graph endpoints and preserves suggested relation state', () => {
@@ -141,7 +141,7 @@ test('neural command center renders imported text through textContent, not HTML 
 });
 
 test('Markdown reader is user-triggered, bounded, stale-safe and announces status without a live full body', () => {
-  assert.match(html, /id="ncReadMarkdown" disabled>Leer documento completo/);
+  assert.match(html, /id="ncReadMarkdown" disabled>Leer Markdown/);
   assert.match(html, /id="ncMarkdownSearch" role="search" novalidate/);
   assert.match(source, /byId\('ncReadMarkdown'\)\.addEventListener\('click',\s*\(\) => void readMarkdown\(\)\)/);
   assert.match(source, /api\('\/api\/doc\/content', \{document_id: documentId, max_bytes: MARKDOWN_MAX_CHARACTERS\}\)/);
@@ -151,6 +151,18 @@ test('Markdown reader is user-triggered, bounded, stale-safe and announces statu
   assert.match(html, /id="ncInspectorAnnouncement" class="nc-sr-only" role="status" aria-live="polite" aria-atomic="true"/);
   assert.doesNotMatch(html, /<aside class="nc-inspector"[^>]*aria-live=/);
   assert.doesNotMatch(source, /\.innerHTML\s*=/);
+});
+
+test('Markdown reader validates the exact backend response and refuses unsafe references', () => {
+  const content = '# Nota real de prueba 🥕';
+  const payload = {document_id: 17, content_markdown: content, bytes_returned: Buffer.byteLength(content), truncated: false,
+    references: [{target_document_id: 18, title: 'Nota relacionada', target_raw: 'carpeta/nota.md', relative_path: 'carpeta/nota.md', status: 'resolved'}]};
+  assert.equal(ui.validateMarkdownResponse(payload, 17), content);
+  assert.throws(() => ui.validateMarkdownResponse({...payload, absolute_path: 'C:\\private\\note.md'}, 17), /contrato seguro/);
+  assert.throws(() => ui.validateMarkdownResponse(payload, 19), /contrato seguro/);
+  assert.throws(() => ui.validateMarkdownResponse({...payload, bytes_returned: 1}, 17), /límite/);
+  assert.throws(() => ui.validateMarkdownResponse({...payload, references: [{...payload.references[0], relative_path: '../secreto.md'}]}, 17), /referencia/);
+  assert.throws(() => ui.validateMarkdownResponse({...payload, references: [{...payload.references[0], target_raw: 'file:///C:/secreto.md'}]}, 17), /referencia/);
 });
 
 test('search result cards stack safely and wrap long citations in the narrow explorer', () => {

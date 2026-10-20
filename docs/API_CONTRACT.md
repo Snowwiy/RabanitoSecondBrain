@@ -14,6 +14,7 @@ JSON UTF-8. Las consultas que pueden contener texto privado utilizan POST, no UR
 | Estado de conectores | GET `/api/cyber/status` | fuentes, fechas, scope/backlog y staging |
 | Documentos y contexto | POST `/api/search`, `/api/context` | q, source, category, project_id, tag, limit/max_chars |
 | Detalle y relaciones | GET `/api/doc/{id}`, `/api/related/{id}` | identificador devuelto por búsqueda |
+| Markdown autorizado | POST `/api/doc/content` | `document_id` indexado y `max_bytes` 1..65536; vista UTF-8 de solo lectura, sanitizada y limitada; nunca recibe rutas |
 | Proyectos y metadatos | GET `/api/projects`, `/api/categories`, `/api/tags` | inventario autorizado/acotado |
 | Historial | GET `/api/scans`, `/api/changes` | metadatos acotados; no explica causas |
 | Decisiones | POST `/api/decisions` | filtros de proyecto/consulta |
@@ -29,6 +30,12 @@ JSON UTF-8. Las consultas que pueden contener texto privado utilizan POST, no UR
 
 Consultar las validaciones del handler para los nombres exactos/campos opcionales. No ampliar silenciosamente límites ni convertir `null` en acceso global. No todas las operaciones CLI tienen endpoint: inspección de dependencias, VEX y captura revisada no deben simularse desde la UI.
 
+### `POST /api/doc/content`
+
+Usa el contrato reconciliado en `FRONTEND_BACKEND_CONTRACT.md`. Acepta exactamente `document_id` (entero seguro positivo) y `max_bytes` (entero entre 1 y 65,536), sin claves duplicadas, query string o rutas. Requiere `Host`/`Origin` loopback del mismo puerto, JSON UTF-8 y un cuerpo máximo de 2,048 bytes; `GET` devuelve 405. La respuesta exacta es `{document_id,content_markdown,bytes_returned,truncated,references[]}` y lleva `Cache-Control: no-store`.
+
+El backend solo resuelve IDs activos y revalida fuente, exclusiones, proyecto, rutas y estado antes de leer. Lee por descriptor/handle de solo lectura, aplica límite UTF-8 y redacción de patrones detectables de credenciales/rutas, y nunca indexa ni actualiza el archivo. Un documento cambiado devuelve 409; no dispara indexado automático. Referencias son solo enlaces explícitos resueltos y autorizados, acotados a 512. Errores estructurados: 400 entrada/codificación, 403 origen/formato, 404 ausente o no autorizado, 409 fuente obsoleta/no disponible, 413 límite, 503 índice no disponible. No se devuelven rutas absolutas ni errores del SO.
+
 ## Estados que no deben ocultarse
 
 - Consultas vacías o sin datos, cobertura parcial y truncamiento son estados distintos de error.
@@ -37,4 +44,4 @@ Consultar las validaciones del handler para los nombres exactos/campos opcionale
 - Grafo: respetar IDs/tipos y totales/truncamiento. Las sugerencias no son enlaces factuales ni aplicabilidad a proyectos.
 - Coding Memory: `passed_as_recorded_not_rerun` no representa una prueba recién ejecutada. No promover propuestas a confirmadas desde el frontend.
 
-Las pruebas HTTP y JavaScript verifican contratos/estados; la QA visual y de lector de pantalla permanece pendiente.
+Las pruebas HTTP, Python y JavaScript verifican contratos/estados; la QA visual real del Inspector Markdown se completó el 2026-10-20. La certificación con lector de pantalla y la QA visual integral del resto de vistas siguen pendientes.
