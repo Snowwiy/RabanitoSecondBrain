@@ -78,7 +78,7 @@
 
 ## Next action
 
-The 2026-10-20 integration checkpoint supersedes the preflight below: the conflict is reconciled and the endpoint is now integrated and validated on `Frontend-Design`. Commit and push this phase only to that branch, then continue through the open priorities in `UI_TASK_BACKLOG.md`. Passing tests do not complete the full redesign. Do not touch the original worktree or `main`.
+The 2026-10-20 integration checkpoint supersedes the preflight below: the conflict is reconciled and the endpoint is integrated, validated and published in commit `a5ea26b9f1156fb3fd879283c77f530b5f61949b` on `origin/Frontend-Design`. `origin/main` remains `5109981a794a41bb7b646beca61ad11045f18ea5`. Continue through the open priorities in `UI_TASK_BACKLOG.md`; passing tests do not complete the full redesign. Do not touch the original worktree or `main`.
 
 ## Markdown reader adapter phase (2026-10-17 — synthetic-only before endpoint integration)
 

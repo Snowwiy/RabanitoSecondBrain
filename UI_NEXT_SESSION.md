@@ -3,7 +3,7 @@
 ## Current state — 2026-10-20
 
 - Work exclusively in the isolated linked worktree on `Frontend-Design`; never edit `main` or the original backend worktree.
-- The latest fetched refs before this phase were `origin/main` = `5109981a794a41bb7b646beca61ad11045f18ea5` and `origin/Frontend-Design` = `1eaf2c1c3814bb7bb5680ca619a89b17e78aec99`. The integration edits are validated locally and must be committed/pushed only to `origin/Frontend-Design`.
+- The integration was committed as `a5ea26b9f1156fb3fd879283c77f530b5f61949b` and pushed only to `origin/Frontend-Design`. Verified remote refs: `origin/Frontend-Design` = `a5ea26b9f1156fb3fd879283c77f530b5f61949b`; `origin/main` = `5109981a794a41bb7b646beca61ad11045f18ea5`.
 - The sole add/add conflict (`FRONTEND_BACKEND_CONTRACT.md`) has been reconciled by preserving both the UI and backend contract requirements. No merge of the backend commit was performed.
 - `POST /api/doc/content` and the minimal dependency closure are now available in this frontend worktree. The existing Inspector requests the selected indexed ID with a 65,536-byte budget, validates exact response fields/references and renders with the existing safe Markdown DOM parser.
 - Read-only loopback API checks succeeded for authorized Obsidian, project and internal-memory documents. Visible browser QA rendered real Obsidian Markdown, metadata, explicit neighbors and 100 recognized references. Stale, size, invalid ID, wrong origin and extra-path failures are covered by backend/frontend checks.
@@ -12,9 +12,10 @@
 
 ## Immediate next steps
 
-1. Review the final diff and commit the validated phase. Push only `HEAD:Frontend-Design`; never force-push, merge into `main`, or touch the original checkout. Verify the resulting remote SHA and clean branch status.
+1. Start the next implementation phase from the verified published `Frontend-Design` head; fetch and inspect status before editing.
 2. Continue remaining work by priority: typed cross-entity Knowledge Graph only after its read-only contract is reviewed; targeted real-index search/filter and legacy read-only panel QA; screen-reader and browser-zoom checks; isolated large-graph frame-time/heap measurement.
-3. Keep the current document-graph fallback and topology disclaimer. Do not call topology groups semantic communities or claim WebGL/browser performance measurements without evidence.
+3. Commit and push each later validated phase only to `origin/Frontend-Design`; never force-push, merge into `main`, or touch the original checkout.
+4. Keep the current document-graph fallback and topology disclaimer. Do not call topology groups semantic communities or claim WebGL/browser performance measurements without evidence.
 
 ## Reader contract and safeguards
 

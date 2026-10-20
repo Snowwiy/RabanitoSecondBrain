@@ -57,7 +57,7 @@
 - [x] Extend the isolated fixture with explicitly synthetic Markdown success, 404 and transport-failure modes; cover bounded API responses, browser-rendered Markdown blocks, source references, internal navigation, search highlights, inert HTML, and visible failure recovery.
 - [x] Document the ID-only `POST /api/doc/content` contract, separate production and fixture behavior, and endpoint-to-component/test matrix.
 - [x] Resolve the contract-file add/add conflict by preserving both versions' compatible requirements; selectively import the authorized reader module, route and focused tests without merging unrelated backend work.
-- [x] Connect the existing Inspector reader to real `POST /api/doc/content`; verify authorized Obsidian, projects and internal-memory reads, bounded responses, error handling, safe DOM output, and read-only source/database behavior.
+- [x] Connect the existing Inspector reader to real `POST /api/doc/content`; verify authorized Obsidian, projects and internal-memory reads, bounded responses, error handling, safe DOM output, and read-only source/database behavior. Published as `a5ea26b9f1156fb3fd879283c77f530b5f61949b` on `origin/Frontend-Design`.
 
 ## Coverage audit and remaining work
 
@@ -77,11 +77,10 @@ The user supplied the Neural Command Center mission and acceptance areas in this
 
 ### Open in priority order
 
-1. Commit and publish the validated reader integration only to `origin/Frontend-Design`; confirm the pushed SHA and keep `main` unchanged.
-2. Continue the typed cross-entity graph only when its read-only API contract is independently reviewed; retain the current document graph fallback.
-3. Run the Orbit list with a screen reader and verify browser zoom if reliable tools become available; browser AX/keyboard checks do not certify assistive technology.
-4. Use an isolated browser profiler for the 1,000-node frame-time/heap profile if available. Current interaction timings include automation overhead and are not frame-time certification.
-5. Add targeted real-index search/filter and broader legacy read-only panel QA without indexing, syncing or writing SQLite.
+1. Continue the typed cross-entity graph only when its read-only API contract is independently reviewed; retain the current document graph fallback.
+2. Run the Orbit list with a screen reader and verify browser zoom if reliable tools become available; browser AX/keyboard checks do not certify assistive technology.
+3. Use an isolated browser profiler for the 1,000-node frame-time/heap profile if available. Current interaction timings include automation overhead and are not frame-time certification.
+4. Add targeted real-index search/filter and broader legacy read-only panel QA without indexing, syncing or writing SQLite.
 
 ## Explicitly out of scope here
 
