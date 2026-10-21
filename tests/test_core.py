@@ -683,7 +683,10 @@ class RabanitoCoreTests(unittest.TestCase):
             self.assertEqual(indexed["added"], 405)
             for note in notes:
                 note.unlink()
-            removed = index_all(settings)
+            blocked = index_all(settings)
+            self.assertEqual(blocked['removed'],0)
+            self.assertEqual(blocked['retirement_guard']['status'],'review_required')
+            removed = index_all(settings,approve_retirements=blocked['retirement_guard']['approval_digest'])
             self.assertEqual(removed["removed"], 405)
 
             preview = prune_inactive_search_payload(settings)

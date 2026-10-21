@@ -233,6 +233,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     index = sub.add_parser("index", help="incrementally index configured sources")
     index.add_argument("--force", action="store_true", help="re-read unchanged files")
+    index.add_argument('--approve-retirements', metavar='SHA256',
+                       help='approve the exact reviewed mass-retirement plan; never bypasses incomplete sources')
 
     prune_cache = sub.add_parser(
         "prune-search-cache", help="preview or explicitly purge text cache for deleted/skipped documents",
@@ -540,7 +542,10 @@ def main(argv: list[str] | None = None) -> None:
             _json(search_vulnerabilities(settings, args.query, source=args.source, kev_only=args.kev,
                                          limit=args.limit, offset=args.offset, since=args.since, min_epss=args.min_epss, sort=args.sort))
     elif args.command == "index":
-        _json(index_all(settings, force=args.force))
+        result = index_all(settings, force=args.force,approve_retirements=args.approve_retirements)
+        _json(result)
+        if result['status'] != 'ok':
+            raise SystemExit(2 if result['status']=='partial' else 1)
     elif args.command == "prune-search-cache":
         if args.apply and not args.yes:
             raise SystemExit("La purga modifica caché derivada y crea un respaldo; repite con --apply --yes tras revisar la vista previa.")
