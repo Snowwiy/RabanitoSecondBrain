@@ -129,18 +129,27 @@ def _context(db, settings, project, options, mode, anchor=None):
         base["coverage"] = {"requires_sync": True, "reason": "explicit_graph_sync_required"}
         return None, None, base
     check_source_schemas(db)
-    prefix = descriptors(db)
     generation = db.one("SELECT max(run_id) FROM kg_runs")[0]
     source_stamp = source_version(db, settings, include_file=True)
+    current_source_version = source_version(db, settings)
     watched = epoch_proof(db)
     proof_key = fingerprint(str(settings.database_path.resolve()), watched, generation, source_stamp, sorted(projects))
+    # A persisted completion proof is valid only while the current watched
+    # database epoch, source authorization/configuration, and trigger coverage
+    # still agree with the version recorded by the completed projection.
+    persisted_fast = bool(watched is not None and state(db, "last_complete_at")
+                          and state(db, "last_complete_source_version") == current_source_version)
     with _PROOF_LOCK:
-        fast = watched is not None and proof_key in _CLEAN_PROOFS
+        fast = persisted_fast or (watched is not None and proof_key in _CLEAN_PROOFS)
     missing_sql = "SELECT count(*) FROM U LEFT JOIN kg_inputs g ON g.input_key=U.k WHERE g.input_key IS NULL OR g.active=0 OR g.fingerprint<>U.fp"
     # U keys are non-null. NOT IN builds an ephemeral membership index instead
     # of SQLite rescanning this UNION-derived table once per cached input.
     obsolete_sql = "SELECT count(*) FROM kg_inputs g WHERE g.active=1 AND g.input_key NOT IN (SELECT k FROM U)"
-    missing, obsolete = (0, 0) if fast else db.one(prefix + "SELECT (" + missing_sql + "),(" + obsolete_sql + ")")
+    if fast:
+        missing, obsolete = 0, 0
+    else:
+        prefix = descriptors(db)
+        missing, obsolete = db.one(prefix + "SELECT (" + missing_sql + "),(" + obsolete_sql + ")")
     if not fast and watched is not None and not missing and not obsolete:
         with _PROOF_LOCK:
             _CLEAN_PROOFS[proof_key] = True

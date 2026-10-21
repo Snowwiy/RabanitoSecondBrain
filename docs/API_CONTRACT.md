@@ -138,6 +138,37 @@ renderer nuevo ni prueba de controles implantados, explotación o aplicabilidad.
 - Grafo: respetar IDs/tipos y totales/truncamiento. Las sugerencias no son enlaces factuales ni aplicabilidad a proyectos.
 - Coding Memory: `passed_as_recorded_not_rerun` no representa una prueba recién ejecutada. No promover propuestas a confirmadas desde el frontend.
 - Historia Cyber: disponible solo después de migración3 durante sync explícito; baseline perezoso y ninguna historia anterior inventada. Lista vacía no implica vulnerabilidad ausente. [Contrato](CYBER_HISTORY.md).
-- Grafo unificado: [contrato completo](KNOWLEDGE_GRAPH.md). No sustituir la vista existente todavía. Page entrega raíces, neighbors un salto; respetar cursor, requires_sync, claims/sugerencias y presupuestos. Las lecturas no crean la proyección ni refrescan fuentes. No enviar datos privados a servicios de layout externos.
+- Grafo unificado: [contrato completo](KNOWLEDGE_GRAPH.md). Neural Orbit, Hex Knowledge y Knowledge Tree usan páginas con cursor y vecinos de un salto; respetar `requires_sync`, claims/sugerencias y presupuestos. Las lecturas no crean la proyección ni refrescan fuentes. No enviar datos privados a servicios de layout externos.
 
-Las pruebas HTTP y JavaScript verifican contratos/estados; la QA visual y de lector de pantalla permanece pendiente.
+## Consumidores del Neural Command Center
+
+El frontend integrado conserva el dashboard y los paneles Cyber Threat Knowledge,
+Zero Trust y Coding Memory. El Inspector obtiene metadata y contexto citado con
+las rutas existentes; solo al pulsar “Leer Markdown” solicita el cuerpo acotado
+por `document_id` al lector real. Las referencias internas se navegan solo si el
+endpoint las devuelve como referencias explícitas resueltas y autorizadas.
+
+El grafo documental conserva `POST /api/graph` y sus dominios `documents`,
+`cyber` y `security`. El grafo tipado usa las tres rutas listadas arriba, conserva
+las 32 clases y los cuatro tipos de relación, y no declara semánticas a partir de
+la posición visual. El cliente pide hasta 200 registros por página y limita su
+vista acumulada a 1.000 nodos/4.000 aristas; una actualización pide como máximo
+1.000 entradas/32 MiB aunque el backend permita lotes mayores. Solo el botón de
+actualización expresamente confirmado puede cambiar la proyección derivada.
+
+El servidor aplica same-origin loopback, límites de cuerpo y rechazo de claves
+JSON duplicadas en las rutas protegidas. Para Knowledge Graph también rechaza
+query string, parámetros y fragmentos URL. La especificación de solicitudes y
+respuestas de la UI está unificada en
+[`FRONTEND_BACKEND_CONTRACT.md`](../FRONTEND_BACKEND_CONTRACT.md).
+
+Los cursores de página del Knowledge Graph están vinculados a sus filtros y al
+límite de la consulta. Continuar páginas conserva ambos; la ruta de vecinos usa
+un cursor de alcance separado y no invalida el cursor de la página principal.
+La UI agrega ambos resultados bajo sus límites locales sin alterar las
+relaciones ni sus clases.
+
+La suite combinada y la QA visual de esta integración se registran en
+`UI_TEST_RESULTS.md`; los resultados de una sola rama no certifican la
+integración. La certificación con lector de pantalla, el zoom real del navegador
+y el perfil de memoria/frame-time siguen siendo limitaciones separadas.

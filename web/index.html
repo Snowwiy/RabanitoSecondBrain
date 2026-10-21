@@ -7,7 +7,11 @@
   <script type="module" src="/assets/cyber.js"></script>
   <script type="module" src="/assets/knowledge.js"></script>
   <style>
-    :root { color-scheme: dark; --bg:#0b0f14; --panel:#111821; --panel2:#18222d; --text:#e8eef5; --muted:#8ea0b5; --accent:#63e6be; --warn:#ffcc66; --bad:#ff7b8b; --line:#587086; --control-border:#668198; --button-border:#47a889; }
+    :root { color-scheme:dark; --bg:#0b0f14; --panel:#111821; --panel2:#18222d; --text:#e8eef5; --muted:#8ea0b5; --accent:#63e6be; --warn:#ffcc66; --bad:#ff7b8b; --line:#587086; --control-border:#668198; --button-border:#47a889; --nc-cyan:#57c7d8; --nc-violet:#ad94f4; --nc-orange:#f2a35f; --nc-project:#56dfbd; --nc-document:#61c5d4; --nc-public:#f2a35f; --nc-security:#b39af6; }
+    :root[data-theme="cyber-ocean"] { --bg:#07131c; --panel:#0a1b27; --panel2:#102532; --accent:#55d7ef; --line:#244657; --button-border:#317d91; --nc-cyan:#55d7ef; --nc-project:#51d8c1; }
+    :root[data-theme="violet-intelligence"] { --bg:#100d19; --panel:#171321; --panel2:#211a30; --accent:#b59cff; --line:#41365c; --button-border:#7157aa; --nc-cyan:#67c9df; --nc-violet:#c0a5ff; --nc-project:#6fe0c4; }
+    :root[data-theme="security-amber"] { --bg:#14110d; --panel:#1d1913; --panel2:#282117; --accent:#f0b45f; --line:#4c4030; --button-border:#886537; --nc-cyan:#70ccd2; --nc-orange:#ffbb66; --nc-public:#ffad59; }
+    :root[data-theme="minimal-dark"] { --bg:#0c1012; --panel:#121719; --panel2:#191f21; --accent:#c1d9d2; --line:#303a3b; --button-border:#596d69; --nc-cyan:#93b7b7; --nc-violet:#aaa4bb; --nc-orange:#ca9e79; --nc-project:#bdd8ce; }
     * { box-sizing:border-box; scrollbar-color:var(--line) var(--bg); scrollbar-width:auto; } body { margin:0; background:radial-gradient(circle at 20% 0%,#162533 0,#0b0f14 38rem); color:var(--text); font:14px/1.45 system-ui,Segoe UI,sans-serif; }
     ::-webkit-scrollbar { width:12px; height:12px; } ::-webkit-scrollbar-track { background:var(--bg); } ::-webkit-scrollbar-thumb { background:var(--line); border:2px solid var(--bg); border-radius:6px; } ::-webkit-scrollbar-thumb:hover { background:var(--control-border); } ::-webkit-scrollbar-thumb:active { background:var(--muted); }
     button:disabled { cursor:default; opacity:.65; } button:active:not(:disabled) { outline:1px solid var(--accent); }
@@ -22,7 +26,7 @@
     @media(forced-colors:active) { * { scrollbar-color:auto; } }
     header { padding:24px 30px 18px; border-bottom:1px solid var(--line); display:flex; gap:24px; align-items:end; justify-content:space-between; }
     h1 { margin:0; font-size:24px; letter-spacing:.02em; } h2 { margin:0 0 10px; font-size:15px; } h3 { margin:0 0 6px; font-size:14px; }
-    .sub { color:var(--muted); margin-top:4px; } main { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(320px,.8fr); gap:16px; padding:16px; max-width:1600px; margin:auto; }
+    .sub { color:var(--muted); margin-top:4px; } main { display:block; padding:12px; max-width:none; margin:auto; }
     .panel { background:rgba(17,24,33,.92); border:1px solid var(--line); border-radius:12px; padding:16px; box-shadow:0 12px 40px #0003; }
     .wide { grid-column:1 / -1; } .search { display:flex; gap:8px; } input,select,button { border:1px solid var(--control-border); border-radius:8px; background:#0d141c; color:var(--text); padding:10px 12px; } input { flex:1; } button { cursor:pointer; background:#173327; border-color:var(--button-border); } button:hover { background:#1e4939; }
     .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:8px; } .stat { background:var(--panel2); border-radius:9px; padding:10px; } .stat b { display:block; font-size:22px; color:var(--accent); } .stat span { color:var(--muted); font-size:12px; }
@@ -43,7 +47,10 @@
     .audit-classifications { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:6px; margin:10px 0; } .audit-classification { padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:#0d141b; } .audit-classification b { color:var(--accent); margin-right:7px; } .audit-finding { cursor:default; } .audit-finding code { color:#f0d18a; overflow-wrap:anywhere; } .audit-candidates { margin:6px 0 0; padding-left:18px; }
     pre { white-space:pre-wrap; overflow:auto; max-height:430px; color:#cfe1ee; } .badge { display:inline-block; padding:2px 7px; border-radius:12px; background:#203143; color:#a8c7dd; font-size:11px; margin-right:4px; } .error { color:var(--bad); }
     @media(max-width:1050px) { .graph-workspace { grid-template-columns:1fr; } .graph-side { max-height:260px; } }
-    @media(max-width:900px) { main { grid-template-columns:1fr; } .wide { grid-column:auto; } }
+    .legacy-workbench { margin:16px auto 0; max-width:1900px; }
+    .legacy-grid { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(320px,.8fr); gap:16px; margin-top:12px; }
+    .legacy-grid .wide { grid-column:1/-1; }
+    @media(max-width:1050px) { .legacy-grid { grid-template-columns:1fr; } .legacy-grid .wide { grid-column:auto; } }
     @media(max-width:600px) {
       header { padding:16px; align-items:flex-start; flex-direction:column; gap:8px; }
       main { gap:10px; padding:10px; }
@@ -54,11 +61,318 @@
     }
     #knowledgeResults .result { cursor:default; }
     #knowledgeResults .result:hover { border-color:var(--line); }
+
+    /* Neural Command Center: runtime values mirror DESIGN.md; no external fonts or assets. */
+    body { background:radial-gradient(ellipse at 48% -18%,#16303a 0,transparent 46rem),var(--bg); }
+    header.nc-app-header { min-height:76px; padding:12px 20px; align-items:center; gap:18px; background:#081218eF; }
+    .nc-brand { display:flex; align-items:center; gap:12px; min-width:260px; }
+    .nc-brand-mark { width:38px; height:38px; display:grid; place-items:center; border:1px solid var(--accent); color:var(--accent); clip-path:polygon(25% 4%,75% 4%,100% 50%,75% 96%,25% 96%,0 50%); background:#55e5c212; }
+    .nc-brand-mark svg { width:25px; height:25px; }
+    .nc-brand h1 { font-size:17px; letter-spacing:.1em; }
+    .nc-brand h1 span { color:var(--accent); }
+    .nc-brand .sub { margin:2px 0 0; font-size:11px; letter-spacing:.04em; }
+    .nc-header-actions { display:flex; justify-content:flex-end; align-items:center; gap:9px; flex-wrap:wrap; }
+    .nc-header-actions label,.nc-label { color:var(--muted); font-size:11px; }
+    .nc-header-actions select,.nc-header-actions button { min-height:36px; padding:7px 10px; font-size:12px; }
+    .nc-health { display:flex; align-items:center; gap:7px; min-height:28px; color:var(--muted); font-size:11px; }
+    .nc-health-dot { width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 9px color-mix(in srgb,var(--accent) 60%,transparent); }
+    .nc-fixture-banner { padding:9px 18px; border-bottom:1px solid #b98545; background:#2b2013; color:#ffd591; text-align:center; font:600 11px ui-monospace,Consolas,monospace; letter-spacing:.06em; }
+    .nc-command-center { --left-width:258px; --right-width:306px; --nc-panel-alpha:92%; display:grid; grid-template-columns:minmax(0,var(--left-width)) 8px minmax(0,1fr) 8px minmax(0,var(--right-width)); align-items:stretch; min-height:690px; max-width:2200px; margin:0 auto; border:1px solid var(--line); border-radius:12px; overflow:clip; background:color-mix(in srgb,var(--bg) var(--nc-panel-alpha),transparent); box-shadow:0 22px 70px #0005; }
+    .nc-command-center[data-left-collapsed="true"] { grid-template-columns:0 0 minmax(0,1fr) 8px minmax(0,var(--right-width)); }
+    .nc-command-center[data-right-collapsed="true"] { grid-template-columns:minmax(0,var(--left-width)) 8px minmax(0,1fr) 0 0; }
+    .nc-command-center[data-left-collapsed="true"][data-right-collapsed="true"] { grid-template-columns:0 0 minmax(0,1fr) 0 0; }
+    .nc-explorer,.nc-inspector { min-width:0; padding:13px; background:linear-gradient(180deg,#0c1a20,#0a151b); }
+    .nc-explorer { border-right:1px solid var(--line); }
+    .nc-inspector { border-left:1px solid var(--line); }
+    [data-left-collapsed="true"] .nc-explorer,[data-right-collapsed="true"] .nc-inspector { display:none; }
+    .nc-eyebrow { color:var(--accent); font:600 10px/1.3 ui-monospace,Consolas,monospace; letter-spacing:.16em; text-transform:uppercase; }
+    .nc-panel-title { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:11px; }
+    .nc-panel-title h2,.nc-panel-title h3 { margin:0; font-size:12px; letter-spacing:.08em; text-transform:uppercase; }
+    .nc-search-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px; margin:11px 0; }
+    .nc-search-form input { min-width:0; width:100%; padding:9px 10px; font-size:12px; }
+    .nc-search-form button { padding:7px 10px; }
+    .nc-search-input-wrap { position:relative; min-width:0; }
+    .nc-search-input-wrap input[type="search"] { padding-right:38px; }
+    .nc-search-clear { position:absolute; top:50%; right:4px; width:28px; height:28px; min-height:28px; flex:none; padding:0!important; transform:translateY(-50%); border-color:transparent; border-radius:50%; appearance:none; background:transparent; color:var(--muted); font-size:18px; line-height:1; text-align:center; }
+    .nc-search-clear:hover { border-color:#2b444a; background:#102027; color:var(--text); }
+    .nc-search-clear[hidden] { display:none; }
+    .nc-search-hint { grid-column:1/-1; }
+    .nc-counts { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:10px 0 14px; }
+    .nc-count { min-height:62px; padding:8px; text-align:left; background:#0d1b21; border:1px solid #263e45; border-radius:7px; }
+    .nc-count:hover { border-color:var(--accent); background:#10232a; }
+    .nc-count strong { display:block; color:var(--accent); font:600 19px/1.1 ui-monospace,Consolas,monospace; }
+    .nc-count span { display:block; margin-top:4px; color:var(--muted); font-size:10px; }
+    .nc-filter-stack { display:grid; gap:7px; margin:10px 0 14px; }
+    .nc-field { display:grid; gap:4px; }
+    .nc-field select,.nc-field input { min-width:0; width:100%; padding:7px 8px; font-size:11px; }
+    .nc-module-list,.nc-categories,.nc-search-results { display:grid; gap:4px; }
+    .nc-module-list button,.nc-category-button,.nc-hit { width:100%; padding:7px 8px; display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; background:transparent; border-color:transparent; border-radius:6px; color:#bdcfcc; font-size:11px; }
+    .nc-module-list button:hover,.nc-category-button:hover,.nc-hit:hover { border-color:#2b444a; background:#102027; color:var(--text); }
+    .nc-search-results { min-width:0; }
+    .nc-search-results .nc-hit { flex-direction:column; align-items:stretch; justify-content:flex-start; min-width:0; overflow-wrap:anywhere; }
+    .nc-search-results .nc-hit > * { min-width:0; overflow-wrap:anywhere; }
+    .nc-module-list button[aria-current="page"] { border-color:#28584e; background:#102a28; color:var(--accent); }
+    .nc-module-state { color:var(--muted); font-size:9px; }
+    .nc-list-scroll { max-height:220px; overflow:auto; scrollbar-gutter:stable; }
+    .nc-divider { border:0; border-top:1px solid #233840; margin:13px 0; }
+    .nc-resizer { cursor:col-resize; background:linear-gradient(180deg,transparent,#3a6368 24%,#3a6368 76%,transparent); opacity:.46; touch-action:none; }
+    .nc-resizer:hover,.nc-resizer:focus-visible,.nc-resizer[data-dragging="true"] { opacity:1; outline:2px solid var(--accent); outline-offset:-3px; }
+    .nc-stage { min-width:0; display:flex; flex-direction:column; background:radial-gradient(ellipse at center,#0d2025 0,#081318 64%); }
+    .nc-stage-head { padding:12px 15px 0; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .nc-stage-head h2 { margin:0; font-size:14px; letter-spacing:.06em; }
+    .nc-stage-count { color:var(--muted); font:10px ui-monospace,Consolas,monospace; }
+    .nc-tabs { display:flex; gap:4px; overflow:auto; padding:9px 12px 0; border-bottom:1px solid #243940; scrollbar-width:thin; }
+    .nc-tabs [role="tab"] { flex:0 0 auto; min-height:37px; padding:8px 11px; border:0; border-bottom:2px solid transparent; border-radius:5px 5px 0 0; background:transparent; color:var(--muted); font-size:11px; }
+    .nc-tabs [role="tab"][aria-selected="true"] { color:var(--accent); border-bottom-color:var(--accent); background:#55e5c20a; }
+    .nc-stage [hidden] { display:none !important; }
+    .nc-controls { display:flex; align-items:end; flex-wrap:wrap; gap:8px; padding:10px 14px; border-bottom:1px solid #20343a; }
+    .nc-controls .nc-field { width:clamp(120px,16%,190px); }
+    .nc-controls button { min-height:33px; padding:6px 9px; font-size:11px; }
+    .nc-sync-dialog { width:min(520px,calc(100vw - 32px)); max-width:calc(100vw - 32px); padding:20px; border:1px solid var(--line); border-radius:12px; background:var(--panel); color:var(--text); box-shadow:0 20px 60px #000b; }
+    .nc-sync-dialog::backdrop { background:rgb(0 0 0 / .68); }
+    .nc-sync-dialog h2 { margin:0 0 8px; }
+    .nc-sync-dialog p { margin:0 0 16px; color:var(--muted); }
+    .nc-sync-dialog-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+    .nc-sync-dialog-actions button { min-height:40px; }
+    @media(forced-colors:active) { .nc-sync-dialog { border:1px solid CanvasText; } .nc-sync-dialog::backdrop { background:Canvas; } }
+    .nc-status { min-height:34px; padding:8px 14px; color:var(--muted); font-size:10px; }
+    .nc-status[data-tone="error"] { color:var(--bad); }
+    .nc-status[data-tone="pending"] { color:var(--warn); }
+    .nc-visual { position:relative; flex:1; min-height:510px; overflow:hidden; }
+    #ncOrbitCanvas { width:100%; height:100%; min-height:510px; display:block; cursor:grab; touch-action:none; outline:none; }
+    #ncOrbitCanvas:active { cursor:grabbing; }
+    #ncOrbitCanvas:focus-visible { box-shadow:inset 0 0 0 2px var(--accent); }
+    .nc-node-tooltip { position:absolute; z-index:2; width:max-content; max-width:min(300px,calc(100% - 16px)); max-height:calc(100% - 16px); overflow:auto; padding:9px 11px; border:1px solid #3c7770; border-radius:8px; background:#071319f2; box-shadow:0 10px 28px #0008; color:var(--text); pointer-events:none; font-size:10px; }
+    .nc-node-tooltip[hidden] { display:none; }
+    .nc-node-tooltip strong,.nc-node-tooltip span { display:block; overflow-wrap:anywhere; }
+    .nc-node-tooltip strong { margin-bottom:4px; color:#e6fff8; font-size:11px; }
+    .nc-node-tooltip-meta { color:#a8beba; }
+    .nc-node-tooltip-path { margin-top:4px; color:var(--accent); font:10px/1.4 ui-monospace,Consolas,monospace; }
+    .nc-visual-hint { position:absolute; left:14px; bottom:12px; color:#90a7a180; font-size:10px; pointer-events:none; }
+    .nc-node-directory { margin-top:10px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; }
+    .nc-node-directory > summary { padding:9px 2px 5px; cursor:pointer; color:var(--accent); font-weight:600; }
+    .nc-node-directory-status { margin:4px 0 7px; }
+    .nc-node-directory-list { display:grid; gap:4px; max-height:250px; overflow:auto; list-style:none; margin:0 0 8px; padding:0; }
+    .nc-node-directory-list li { min-width:0; padding:5px 7px; border:1px solid #263e45; border-radius:6px; background:#0d1b21; }
+    .nc-node-directory-item { width:100%; padding:4px 5px; text-align:left; border-color:transparent; color:var(--text); font-size:11px; overflow-wrap:anywhere; }
+    .nc-node-directory-item[aria-pressed="true"] { border-color:var(--accent); background:#102c2b; }
+    .nc-node-directory-meta { display:block; padding:0 5px 2px; color:var(--muted); font-size:10px; overflow-wrap:anywhere; }
+    .nc-node-directory-nav { display:flex; justify-content:space-between; gap:8px; padding-bottom:8px; }
+    .nc-node-directory-nav button { min-height:32px; padding:5px 8px; font-size:10px; }
+    .nc-load-more { display:flex; justify-content:center; padding:0 12px 12px; }
+    .nc-load-more button { min-width:160px; padding:7px 12px; font-size:11px; }
+    .nc-hex-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); align-content:start; gap:8px; padding:15px; }
+    .nc-hex-card { position:relative; min-height:148px; display:grid; place-items:center; padding:18px 13px; border:1px solid #3a6565; background:radial-gradient(circle at 50% 45%,#163139,#0a171d 72%); clip-path:polygon(25% 4%,75% 4%,100% 50%,75% 96%,25% 96%,0 50%); text-align:center; color:var(--text); }
+    .nc-hex-card:hover,.nc-hex-card[data-selected="true"] { border-color:var(--accent); background:radial-gradient(circle at 50% 45%,#205047,#0c1a20 72%); }
+    .nc-hex-card strong { display:block; max-width:150px; overflow-wrap:anywhere; font-size:11px; }
+    .nc-hex-card span { display:block; color:var(--muted); font-size:10px; }
+    .nc-hex-wrap { position:relative; padding:2px; background:#35585c; clip-path:polygon(25% 4%,75% 4%,100% 50%,75% 96%,25% 96%,0 50%); }
+    .nc-hex-wrap:focus-within { background:var(--accent); }
+    .nc-hex-card { min-height:148px; align-content:center; gap:5px; }
+    .nc-hex-select { max-width:160px; padding:3px 5px; border-color:transparent; background:transparent; color:var(--text); font-size:11px; font-weight:650; overflow-wrap:anywhere; }
+    .nc-hex-count { color:var(--muted); font-size:10px; }
+    .nc-hex-entities { display:grid; gap:2px; max-width:158px; }
+    .nc-hex-entity { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:2px 4px; border-color:transparent; background:transparent; color:#aec5c1; font-size:9px; }
+    .nc-hex-entity:hover { border-color:var(--accent); }
+    .nc-tree { padding:13px; overflow:auto; max-height:670px; }
+    .nc-tree ul { list-style:none; margin:0; padding-left:19px; border-left:1px solid #315159; }
+    .nc-tree > ul { padding-left:0; border:0; }
+    .nc-tree li { margin:4px 0; }
+    .nc-tree button { width:100%; max-width:100%; padding:7px 9px; text-align:left; overflow-wrap:anywhere; background:#0c1b20; border-color:#20373c; font-size:11px; }
+    .nc-tree button span { display:block; color:var(--muted); font-size:9px; }
+    #ncGalaxyControls { padding:10px 12px 0; }
+    #ncGalaxyControls .toolbar { margin:0 0 8px; }
+    #ncGalaxyCanvasHost { min-width:0; padding:0 10px 10px; }
+    .nc-galaxy-controls { padding:8px 12px 0; }
+    .nc-galaxy-controls .toolbar { margin:0 0 8px; }
+    .nc-galaxy-canvas-host { min-width:0; padding:0 10px 10px; }
+    .nc-command-center #graph { height:clamp(420px,60vh,690px); min-height:420px; }
+    .nc-command-center .graph-workspace { display:block; }
+    .nc-command-center #graphInfo { display:none; }
+    .nc-inspector { display:flex; flex-direction:column; gap:10px; overflow:auto; }
+    .nc-inspector-intro { color:var(--muted); font-size:11px; }
+    .nc-inspector-body { min-height:150px; overflow-wrap:anywhere; }
+    .nc-inspector-body h3 { margin:0 0 6px; font-size:14px; line-height:1.35; }
+    .nc-inspector-meta { color:var(--muted); font-size:10px; }
+    .nc-inspector-section { border-top:1px solid #263d43; padding-top:9px; margin-top:9px; }
+    .nc-inspector-section h4 { margin:0 0 6px; color:var(--accent); font-size:10px; letter-spacing:.07em; text-transform:uppercase; }
+    .nc-fragment { margin:7px 0; padding:8px; border-left:2px solid var(--nc-cyan); background:#0d1a20; color:#d0dedb; white-space:pre-wrap; overflow-wrap:anywhere; font:11px/1.5 ui-monospace,Consolas,monospace; }
+    .nc-markdown-tools { display:grid; gap:7px; }
+    .nc-markdown-tools form { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:5px; align-items:end; }
+    .nc-markdown-tools form[hidden] { display:none; }
+    .nc-markdown-tools label { grid-column:1/-1; color:var(--muted); font-size:10px; }
+    .nc-markdown-tools input { min-width:0; }
+    .nc-markdown-content { max-height:640px; overflow:auto; padding:10px; border:1px solid #263d43; border-radius:6px; background:#091318; overflow-wrap:anywhere; }
+    .nc-markdown-content h1,.nc-markdown-content h2,.nc-markdown-content h3,.nc-markdown-content h4,.nc-markdown-content h5,.nc-markdown-content h6 { color:var(--accent); line-height:1.3; }
+    .nc-markdown-content p,.nc-markdown-content li,.nc-markdown-content blockquote { font-size:12px; line-height:1.6; }
+    .nc-markdown-content ul,.nc-markdown-content ol { padding-left:22px; }
+    .nc-markdown-content pre { max-width:100%; overflow:auto; padding:9px; background:#0d1a20; border-radius:5px; white-space:pre; }
+    .nc-markdown-content code { font:11px/1.5 ui-monospace,Consolas,monospace; }
+    .nc-markdown-content table { width:100%; border-collapse:collapse; font-size:11px; }
+    .nc-markdown-content th,.nc-markdown-content td { border:1px solid #35484c; padding:5px; text-align:left; vertical-align:top; }
+    .nc-markdown-content blockquote { margin:8px 0; padding-left:10px; border-left:2px solid var(--nc-cyan); color:var(--muted); }
+    .nc-markdown-content a { color:var(--accent); }
+    .nc-markdown-content button { padding:2px 4px; color:var(--accent); background:transparent; border:0; text-decoration:underline; }
+    .nc-markdown-content mark { background:#e9c768; color:#172024; border-radius:2px; }
+    .nc-markdown-status { min-height:1.3em; color:var(--muted); font-size:10px; }
+    .nc-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    @media(max-width:430px) { .nc-markdown-tools form { grid-template-columns:minmax(0,1fr) auto; } .nc-markdown-tools form button:last-of-type { grid-column:2; } }
+    .nc-neighbor-list { display:grid; gap:4px; max-height:240px; overflow:auto; }
+    .nc-neighbor-list button { padding:6px 7px; text-align:left; background:transparent; border-color:#263d43; font-size:10px; }
+    .nc-preferences { border-top:1px solid #263d43; padding-top:10px; }
+    .nc-preferences summary { color:var(--muted); font-size:11px; }
+    .nc-preferences .nc-field { margin:9px 0; }
+    .nc-preferences input[type="range"] { accent-color:var(--accent); padding:0; }
+    .nc-preferences input[type="checkbox"] { flex:none; accent-color:var(--accent); }
+    .nc-preferences button { padding:7px; font-size:10px; }
+    .nc-pending { color:var(--muted); font-size:10px; border:1px dashed #35484c; border-radius:6px; padding:8px; }
+    .legacy-workbench { max-width:2200px; }
+    .legacy-workbench > summary { padding:10px 14px; border:1px solid var(--line); border-radius:8px; color:var(--muted); background:#0c171c; font-size:12px; }
+    .legacy-workbench[open] > summary { border-radius:8px 8px 0 0; color:var(--accent); }
+    .legacy-workbench .legacy-grid { padding-top:12px; }
+    .legacy-workbench .module-focus-target:focus { outline:2px solid var(--accent); outline-offset:3px; }
+    @media(max-width:1120px) {
+      .nc-command-center { --left-width:230px; --right-width:270px; }
+      .nc-controls .nc-field { width:145px; }
+      header.nc-app-header { align-items:flex-start; flex-wrap:wrap; }
+      .nc-header-actions { margin-left:auto; }
+    }
+    @media(max-width:840px) {
+      header.nc-app-header { padding:12px; }
+      .nc-command-center,.nc-command-center[data-left-collapsed="true"],.nc-command-center[data-right-collapsed="true"],.nc-command-center[data-left-collapsed="true"][data-right-collapsed="true"] { grid-template-columns:minmax(0,1fr); }
+      .nc-resizer { display:none; }
+      .nc-explorer,.nc-inspector { border:0; }
+      .nc-explorer { border-bottom:1px solid var(--line); max-height:340px; overflow:auto; }
+      .nc-inspector { border-top:1px solid var(--line); max-height:none; }
+      .nc-stage { min-height:600px; }
+      .nc-visual,#ncOrbitCanvas { min-height:430px; }
+      .nc-header-actions { justify-content:flex-start; margin:0; }
+    }
+    @media(max-width:600px) {
+      .nc-brand { min-width:0; }
+      .nc-brand h1 { font-size:14px; }
+      .nc-header-actions { gap:6px; }
+      .nc-header-actions select,.nc-header-actions button { min-height:40px; }
+      .nc-stage-head { padding-inline:10px; }
+      .nc-controls { padding:8px; }
+      .nc-controls .nc-field { width:calc(50% - 5px); }
+      .nc-hex-grid { grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:2px; }
+      .nc-hex-wrap { min-height:130px; }
+      .nc-hex-card { min-height:130px; }
+      #ncOrbitCanvas,.nc-visual { min-height:360px; }
+    }
+    @media(prefers-reduced-motion:reduce) {
+      *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; }
+    }
+    @media(forced-colors:active) {
+      .nc-command-center,.nc-count,.nc-module-list button,.nc-tree button,.nc-inspector-section { border-color:CanvasText; }
+      .nc-hex-wrap { background:CanvasText; }
+      .nc-hex-card { border:2px solid CanvasText; }
+    }
   </style>
 </head>
 <body>
-  <header><div><h1>Rabanito Second Brain</h1><div class="sub">Memoria local · SQLite FTS5 · Obsidian de solo lectura · grafo derivado</div></div><div class="meta" id="health">comprobando…</div></header>
+  <header class="nc-app-header">
+    <div class="nc-brand"><div class="nc-brand-mark" aria-hidden="true">◇</div><div><h1>RABANITO <span>SECOND BRAIN</span></h1><div class="sub">Neural Knowledge Command Center · memoria local</div></div></div>
+    <div class="nc-header-actions">
+      <div class="nc-health" aria-live="polite"><span class="nc-health-dot" aria-hidden="true"></span><span id="health">Comprobando API local…</span></div>
+      <label for="ncTheme">Tema</label><select id="ncTheme"><option value="raven-neon">Raven Neon</option><option value="cyber-ocean">Cyber Ocean</option><option value="violet-intelligence">Violet Intelligence</option><option value="security-amber">Security Amber</option><option value="minimal-dark">Minimal Dark</option></select>
+      <button type="button" id="ncToggleExplorer" aria-controls="ncExplorer" aria-expanded="true" aria-pressed="false">Explorador</button><button type="button" id="ncToggleInspector" aria-controls="ncInspector" aria-expanded="true" aria-pressed="false">Inspector</button>
+    </div>
+  </header>
+  <div id="ncFixtureBanner" class="nc-fixture-banner" role="status" hidden>ENTORNO DE PRUEBA · Los valores siguientes son sintéticos y no representan el índice de Rabanito.</div>
   <main>
+    <section class="nc-command-center" id="ncCommandCenter" aria-label="Neural Knowledge Command Center" data-left-collapsed="false" data-right-collapsed="false">
+      <aside class="nc-explorer" id="ncExplorer" aria-label="Explorador de conocimiento">
+        <div class="nc-panel-title"><div><div class="nc-eyebrow">Knowledge Explorer</div><h2>Memoria local</h2></div><span class="nc-stage-count" id="ncExplorerCount">—</span></div>
+        <form class="nc-search-form" id="ncGlobalSearch" role="search" novalidate><label class="nc-label" for="ncQuery" style="grid-column:1/-1">Búsqueda global</label><div class="nc-search-input-wrap"><input id="ncQuery" type="search" maxlength="500" placeholder="Buscar en conocimiento…" autocomplete="off"><input type="reset" id="ncClearSearch" class="nc-search-clear" aria-label="Limpiar búsqueda" aria-controls="ncSearchResults" value="×" hidden></div><button type="submit">Buscar</button><span class="nc-search-hint meta" id="ncSearchStatus" role="status" aria-live="polite">Consultas locales; sin transmitir contenido.</span></form>
+        <div class="nc-search-results nc-list-scroll" id="ncSearchResults" aria-label="Resultados de búsqueda"></div>
+        <div class="nc-counts" id="ncCounts" aria-label="Estadísticas reales del índice"><div class="nc-count"><strong>—</strong><span>Documentos</span></div><div class="nc-count"><strong>—</strong><span>Relaciones</span></div><div class="nc-count"><strong>—</strong><span>Proyectos</span></div><div class="nc-count"><strong>—</strong><span>Enlaces pendientes</span></div></div>
+        <div class="nc-filter-stack">
+          <label class="nc-field"><span class="nc-label">Proyecto activo</span><select id="ncProject"><option value="">Todos los proyectos</option></select></label>
+          <label class="nc-field"><span class="nc-label">Fuente</span><select id="ncSource"><option value="">Todas</option><option value="obsidian">Obsidian</option><option value="projects">Proyectos</option><option value="internal">Rabanito</option></select></label>
+          <label class="nc-field"><span class="nc-label">Categoría</span><select id="ncCategory"><option value="">Todas</option></select></label>
+        </div>
+        <hr class="nc-divider">
+        <div class="nc-panel-title"><h3>Módulos</h3><span class="nc-label">estado real</span></div>
+        <nav class="nc-module-list" aria-label="Módulos de conocimiento">
+          <button type="button" data-module="documents" aria-current="page"><span>◈ Documentos y notas</span><span class="nc-module-state">Disponible</span></button>
+          <button type="button" data-module="projects"><span>⌘ Proyectos</span><span class="nc-module-state">Disponible</span></button>
+          <button type="button" data-module="decisions"><span>⌖ Decisiones verificadas</span><span class="nc-module-state">Consultar</span></button>
+          <button type="button" data-module="coding"><span>⌁ Coding Memory</span><span class="nc-module-state">Consultar</span></button>
+          <button type="button" data-module="security"><span>⬡ Zero Trust y estándares</span><span class="nc-module-state">Consultar</span></button>
+          <button type="button" data-module="cyber"><span>△ Vulnerabilidades</span><span class="nc-module-state">Consultar</span></button>
+          <button type="button" data-module="sources"><span>⟳ Fuentes e indexaciones</span><span class="nc-module-state">Disponible</span></button>
+        </nav>
+        <hr class="nc-divider"><div class="nc-panel-title"><h3>Proyectos</h3><span class="nc-stage-count" id="ncProjectCount">—</span></div><div class="nc-categories nc-list-scroll" id="ncProjectList" aria-label="Proyectos descubiertos"></div>
+        <div class="nc-pending" id="ncPendingNote">Knowledge Graph ofrece entidades y relaciones tipadas en páginas. Las comunidades de Orbit y Hex se estiman por topología; no son hechos semánticos.</div>
+      </aside>
+      <div class="nc-resizer" role="separator" tabindex="0" aria-label="Cambiar ancho del explorador" aria-orientation="vertical" aria-valuemin="190" aria-valuemax="420" aria-valuenow="258" data-panel="left"></div>
+      <section class="nc-stage" aria-label="Visualización de conocimiento">
+        <div class="nc-stage-head"><div><div class="nc-eyebrow">Neural Command Center</div><h2 id="ncViewTitle">NEURAL ORBIT</h2></div><div class="nc-stage-count" id="ncGraphCount">Cargando índice real…</div></div>
+        <div class="nc-tabs" role="tablist" aria-label="Vistas del conocimiento">
+          <button type="button" role="tab" id="ncTabOrbit" aria-selected="true" aria-controls="ncPanelOrbit" data-view="orbit">NEURAL ORBIT</button>
+          <button type="button" role="tab" id="ncTabHex" aria-selected="false" aria-controls="ncPanelHex" data-view="hex">HEX KNOWLEDGE</button>
+          <button type="button" role="tab" id="ncTabGalaxy" aria-selected="false" aria-controls="ncPanelGalaxy" data-view="galaxy">KNOWLEDGE GALAXY 3D</button>
+          <button type="button" role="tab" id="ncTabTree" aria-selected="false" aria-controls="ncPanelTree" data-view="tree">KNOWLEDGE TREE</button>
+        </div>
+        <div class="nc-controls" aria-label="Filtros de visualización">
+          <label class="nc-field"><span class="nc-label">Grafo</span><select id="ncGraphMode"><option value="documents">Documentos</option><option value="typed">Knowledge Graph tipado</option></select></label>
+          <label class="nc-field"><span class="nc-label">Tipo de entidad</span><select id="ncKindFilter" disabled>
+            <option value="all">Todos los tipos</option>
+            <optgroup label="Memoria"><option value="project">Proyecto</option><option value="document">Documento</option><option value="decision">Decisión</option><option value="solution">Experiencia revisada</option></optgroup>
+            <optgroup label="Conocimiento"><option value="vulnerability">Vulnerabilidad</option><option value="observation">Observación pública</option><option value="weakness">Debilidad (CWE)</option><option value="package">Paquete</option><option value="security_concept">Concepto de seguridad</option><option value="reference">Referencia</option><option value="product_condition">Condición de producto</option><option value="standard">Estándar</option><option value="control">Control</option><option value="dependency">Dependencia</option><option value="dependency_declaration">Declaración de dependencia</option><option value="technology">Tecnología</option><option value="snapshot">Captura de versión</option><option value="review">Revisión</option><option value="security_advisory">Aviso de seguridad</option></optgroup>
+            <optgroup label="MITRE ATT&amp;CK"><option value="attack_technique">Técnica ATT&amp;CK</option><option value="attack_campaign">Campaña ATT&amp;CK</option><option value="attack_mitigation">Mitigación ATT&amp;CK</option><option value="threat_group">Grupo de intrusión</option><option value="attack_software">Software ATT&amp;CK</option><option value="attack_matrix">Matriz ATT&amp;CK</option><option value="attack_tactic">Táctica ATT&amp;CK</option><option value="attack_analytic">Analítica ATT&amp;CK</option><option value="attack_data_component">Componente de datos ATT&amp;CK</option><option value="attack_data_source">Fuente de datos ATT&amp;CK</option><option value="attack_detection_strategy">Estrategia de detección ATT&amp;CK</option><option value="attack_asset">Activo ATT&amp;CK</option><option value="attack_collection">Colección ATT&amp;CK</option></optgroup>
+          </select></label>
+          <label class="nc-field"><span class="nc-label">Color por</span><select id="ncColor" aria-describedby="ncCommunityHelp"><option value="category">Categoría</option><option value="source">Fuente</option><option value="project">Proyecto</option><option value="kind">Tipo de entidad</option><option value="component">Componente conectado</option><option value="community">Comunidad detectada</option></select></label>
+          <label class="nc-field"><span class="nc-label">Relaciones</span><select id="ncDepth"><option value="0">Vista global</option><option value="1">1 salto</option><option value="2">2 saltos</option></select></label>
+          <label class="nc-field"><span class="nc-label">Grado mínimo</span><input id="ncMinDegree" type="range" min="0" max="8" step="1" value="0"></label>
+          <label class="nc-field"><span class="nc-label">Densidad</span><input id="ncDensity" type="range" min="40" max="500" step="20" value="180"></label>
+          <label class="nc-field"><span class="nc-label">Tamaño nodos</span><input id="ncNodeSize" type="range" min="3" max="12" step="1" value="6"></label>
+          <label class="nc-field"><span class="nc-label"><input id="ncSuggestions" type="checkbox"> Mostrar sugerencias</span></label>
+          <button type="button" id="ncCenter">Centrar vista</button><button type="button" id="ncExpandNeighbors" disabled aria-describedby="ncTypedGraphNote">Expandir vecinos</button><button type="button" id="ncGraphSync" hidden aria-describedby="ncTypedGraphNote">Actualizar proyección</button><button type="button" id="ncLowMotion" aria-pressed="false">Reducir movimiento</button>
+        </div>
+        <p id="ncCommunityHelp" class="meta">Las comunidades detectadas se estiman a partir de la densidad de enlaces explícitos; no son hechos semánticos ni incluyen sugerencias.</p>
+        <p id="ncTypedGraphNote" class="meta" hidden>Knowledge Graph usa una proyección local explícita y paginada. Actualizarla escribe solo el índice derivado; no modifica Obsidian ni los proyectos.</p>
+        <div class="nc-status" id="ncStatus" role="status" aria-live="polite">Conectando con la API local…</div>
+        <div class="nc-visual" id="ncPanelOrbit" role="tabpanel" aria-labelledby="ncTabOrbit"><canvas id="ncOrbitCanvas" tabindex="0" role="application" aria-describedby="ncOrbitTooltip" aria-label="Grafo de conocimiento. Pasa el cursor para previsualizar un nodo o usa las flechas para recorrerlos; Enter abre la ficha y Escape limpia la selección."></canvas><div class="nc-node-tooltip" id="ncOrbitTooltip" role="tooltip" hidden></div><div class="nc-visual-hint">Arrastra para desplazar · rueda para acercar · flechas para recorrer · Enter para inspeccionar</div></div>
+        <details class="nc-node-directory"><summary>Navegar nodos en lista accesible</summary><p id="ncNodeDirectoryStatus" class="nc-node-directory-status meta" role="status" aria-live="polite">Cargando nodos del índice local…</p><ul id="ncAccessibleNodes" class="nc-node-directory-list" aria-label="Nodos filtrados del grafo"></ul><nav class="nc-node-directory-nav" aria-label="Páginas de nodos"><button type="button" id="ncNodePagePrev" aria-controls="ncAccessibleNodes" disabled>Nodos anteriores</button><button type="button" id="ncNodePageNext" aria-controls="ncAccessibleNodes" disabled>Nodos siguientes</button></nav></details>
+        <div class="nc-hex-grid" id="ncPanelHex" role="tabpanel" aria-labelledby="ncTabHex" hidden></div>
+        <div id="ncPanelGalaxy" role="tabpanel" aria-labelledby="ncTabGalaxy" hidden></div>
+        <div class="nc-tree" id="ncPanelTree" role="tabpanel" aria-labelledby="ncTabTree" hidden></div>
+        <div class="nc-load-more"><button type="button" id="ncLoadMore">Cargar más nodos</button></div>
+        <dialog id="ncGraphSyncDialog" class="nc-sync-dialog" aria-labelledby="ncGraphSyncTitle" aria-describedby="ncGraphSyncDescription">
+          <form method="dialog" novalidate>
+            <h2 id="ncGraphSyncTitle">Actualizar la proyección tipada</h2>
+            <p id="ncGraphSyncDescription">Se actualizará una tanda acotada del índice derivado local. Esto no modifica Obsidian ni los archivos de proyectos.</p>
+            <div class="nc-sync-dialog-actions"><button type="submit" value="cancel" autofocus>Cancelar</button><button type="submit" value="sync">Actualizar proyección local</button></div>
+          </form>
+        </dialog>
+      </section>
+      <div class="nc-resizer" role="separator" tabindex="0" aria-label="Cambiar ancho del inspector" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="460" aria-valuenow="306" data-panel="right"></div>
+      <aside class="nc-inspector" id="ncInspector" aria-label="Inspector de conocimiento">
+        <div id="ncInspectorAnnouncement" class="nc-sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+        <div class="nc-panel-title"><div><div class="nc-eyebrow">Knowledge Inspector</div><h2>Entidad seleccionada</h2></div><span class="nc-label" id="ncInspectorType">Sin selección</span></div>
+        <div class="nc-inspector-body" id="ncInspectorBody"><p class="nc-inspector-intro">Selecciona un nodo, resultado de búsqueda o elemento de una comunidad. Se mostrarán metadatos locales y fragmentos citados.</p></div>
+        <div class="nc-inspector-section"><h4>Fragmentos citados</h4><div id="ncFragments" class="nc-inspector-intro">Aún no hay documento seleccionado.</div></div>
+        <section class="nc-inspector-section nc-markdown-tools" aria-labelledby="ncMarkdownHeading"><h4 id="ncMarkdownHeading">Documento Markdown</h4><button type="button" id="ncReadMarkdown" disabled>Leer Markdown</button><div id="ncMarkdownStatus" class="nc-markdown-status" role="status" aria-live="polite">Selecciona un documento para leer su vista Markdown.</div><p class="nc-inspector-intro">Vista de solo lectura: las credenciales y rutas detectables pueden aparecer ocultas. Esto no sustituye las exclusiones de origen configuradas.</p><div id="ncMarkdownReader" hidden><form id="ncMarkdownSearch" role="search" novalidate hidden><label for="ncMarkdownQuery">Buscar dentro del documento</label><input id="ncMarkdownQuery" type="search" maxlength="100" autocomplete="off"><button type="button" id="ncMarkdownPrev" aria-label="Coincidencia anterior" disabled>Anterior</button><button type="button" id="ncMarkdownNext" aria-label="Siguiente coincidencia" disabled>Siguiente</button></form><div id="ncMarkdownSearchStatus" class="nc-markdown-status" role="status" aria-live="polite"></div><article id="ncMarkdownContent" class="nc-markdown-content" aria-label="Contenido Markdown del documento"></article><div class="nc-inspector-section"><h4>Referencias reconocidas</h4><ul id="ncMarkdownReferences"></ul></div></div></section>
+        <div class="nc-inspector-section"><h4>Relaciones explícitas</h4><div id="ncNeighbors" class="nc-neighbor-list"><span class="meta">Selecciona una entidad para explorar vecinos.</span></div></div>
+        <div class="nc-inspector-section"><h4>Acciones seguras</h4><div class="toolbar"><button type="button" id="ncOpenOriginal" disabled>Abrir fuente autorizada</button><button type="button" id="ncGetContext" disabled>Recuperar contexto</button></div><div class="nc-label" id="ncSourceRef">No se expone la ruta absoluta de la fuente.</div></div>
+        <details class="nc-preferences"><summary>Preferencias locales</summary>
+          <label class="nc-field"><span class="nc-label">Zoom inicial</span><input id="ncZoomPref" type="range" min="60" max="150" value="100"></label>
+          <label class="nc-field"><span class="nc-label">Transparencia de paneles</span><input id="ncOpacity" type="range" min="60" max="100" value="92"></label>
+          <label class="nc-field"><span class="nc-label">Brillo de conexiones</span><input id="ncLinkBrightness" type="range" min="10" max="100" value="62"></label>
+          <label class="nc-field"><span class="nc-label">Grosor de conexiones</span><input id="ncLinkWidth" type="range" min="1" max="4" step="0.5" value="1"></label>
+          <label class="nc-field"><span class="nc-label">Distancia orbital</span><input id="ncOrbitSpacing" type="range" min="70" max="140" value="100"></label>
+          <label class="nc-field"><span class="nc-label">Calidad del canvas</span><input id="ncRenderQuality" type="range" min="100" max="200" step="25" value="150"></label>
+          <label class="nc-field"><span class="nc-label">Escala de texto</span><input id="ncFontScale" type="range" min="90" max="120" value="100"></label>
+          <label class="nc-field"><span class="nc-label">Tipografía</span><select id="ncTypography"><option value="system">Sistema</option><option value="mono">Monoespaciada</option></select></label>
+          <label class="nc-field"><span class="nc-label"><input id="ncShowLabels" type="checkbox" checked> Etiquetas al seleccionar/zoom cercano</span></label>
+          <label class="nc-field"><span class="nc-label"><input id="ncReducedMotion" type="checkbox"> Reducir movimiento</span></label>
+          <button type="button" id="ncResetPrefs">Restablecer preferencias</button>
+        </details>
+      </aside>
+    </section>
     <details class="panel wide" id="knowledgePanel">
       <summary>Security Architecture y Coding Memory · referencias y experiencias revisadas</summary>
       <p class="meta">Consultas locales de solo lectura. Los resúmenes no certifican cumplimiento; las pruebas de experiencias son resultados registrados, no ejecutados de nuevo.</p>
@@ -85,11 +399,11 @@
       <div class="cyber-public-actions"><p class="meta">Actualizar realiza consultas públicas acotadas. NVD sin identificador actualiza una ventana incremental; EPSS consulta CVE ya conocidas; OSV requiere un identificador público. La programación periódica está desactivada.</p><div class="toolbar"><label for="cyberSyncSource">Fuente a actualizar</label><select id="cyberSyncSource"><option value="kev">CISA KEV</option><option value="nvd">NVD</option><option value="epss">FIRST EPSS</option><option value="osv">OSV</option></select><label for="cyberSyncId">Identificador público (opcional)</label><input id="cyberSyncId" maxlength="180" placeholder="CVE-… o GHSA-…" aria-describedby="cyberSyncStatus"><button type="button" id="cyberSync">Actualizar fuente pública</button></div><div id="cyberSyncStatus" class="meta cyber-status" role="status" aria-live="polite"></div></div>
     </details>
     <section class="panel wide"><div class="search"><input id="query" aria-label="Buscar conocimiento local" placeholder="Buscar conocimiento local…"><button id="searchBtn">Buscar</button></div><div class="toolbar" style="margin-top:10px"><label for="source">Fuente</label><select id="source"><option value="">Todas</option><option value="obsidian">Obsidian</option><option value="projects">Proyectos</option><option value="internal">Rabanito</option></select><label for="searchProject">Proyecto</label><select id="searchProject"><option value="">Todos</option></select><label for="category">Categoría</label><input id="category" aria-label="Filtrar por categoría" placeholder="ej. cybersecurity" style="max-width:200px"><label for="searchTag">Etiqueta exacta</label><input id="searchTag" list="availableTags" aria-label="Filtrar por etiqueta exacta" placeholder="ej. #seguridad" style="max-width:180px"><datalist id="availableTags"></datalist><button id="contextBtn">Recuperar contexto citado</button></div></section>
-    <section class="panel"><h2>Estado del índice</h2><div class="stats" id="stats"></div><div class="meta" id="scan" style="margin-top:10px"></div><div class="toolbar" style="margin-top:12px"><button id="syncBtn">Sincronizar fuentes</button><button id="auditBtn">Ejecutar auditoría</button><button id="linkBtn">Sugerir relaciones</button></div><div class="meta" id="operationStatus" aria-live="polite"></div></section>
+    <section class="panel"><h2>Estado del índice</h2><div class="stats" id="stats"></div><div class="meta" id="scan" style="margin-top:10px"></div><div class="toolbar" style="margin-top:12px"><button id="syncBtn">Sincronizar fuentes</button><button id="auditBtn">Ejecutar auditoría</button><button id="linkBtn">Sugerir relaciones</button></div><div class="meta" id="operationStatus" role="status" aria-live="polite"></div></section>
     <section class="panel" aria-labelledby="scanHistoryHeading"><div class="toolbar"><h2 id="scanHistoryHeading" style="margin-right:auto">Historial de indexaciones</h2><button id="scanHistoryRefresh" type="button">Actualizar</button></div><div id="scanHistoryStatus" class="meta" role="status" aria-live="polite">Cargando historial…</div><div id="scanHistory" class="scan-list" role="list" aria-label="Diez indexaciones más recientes"></div></section>
     <section class="panel" aria-labelledby="documentChangesHeading"><div class="toolbar"><h2 id="documentChangesHeading" style="margin-right:auto">Cambios de documentos</h2><label for="documentChangeProject">Proyecto</label><select id="documentChangeProject"><option value="">Todos</option></select><button id="documentChangesRefresh" type="button">Actualizar</button></div><div id="documentChangesStatus" class="meta" role="status" aria-live="polite">Cargando eventos locales…</div><div id="documentChanges" class="scan-list" role="list" aria-label="Veinte cambios de documentos más recientes"></div></section>
     <section class="panel wide" id="auditPanel"><div class="toolbar"><h2 style="margin-right:auto">Calidad · fuentes e índice</h2><button id="auditReviewBtn">Revisar hallazgos locales</button></div><div id="auditStatus" class="meta" role="status" aria-live="polite">Vista de solo lectura: no corrige enlaces ni sincroniza fuentes; coincidencias y cambios detectados son pistas para revisión humana.</div><div id="auditSummary" class="stats"></div><div class="toolbar"><label for="auditKind">Clasificación</label><select id="auditKind"><option value="">Todas</option></select><label for="auditPathState">Estado de destino</label><select id="auditPathState"><option value="">Todos</option></select><label for="auditQuery">Buscar hallazgo</label><input id="auditQuery" aria-label="Filtrar hallazgos de enlaces" placeholder="título, ruta o destino" style="max-width:260px"></div><div id="auditClassifications" class="audit-classifications" aria-live="polite"></div><div id="auditIndexDrift" class="results" aria-live="polite"></div><div id="auditFindings" class="results" aria-live="polite"><div class="meta">Pulsa “Revisar hallazgos locales” para consultar el estado actual.</div></div></section>
-    <section class="panel"><h2>Resultados</h2><div class="results" id="results"><div class="meta">Escribe una consulta para comenzar.</div></div></section>
+    <section class="panel"><h2>Resultados</h2><div id="legacySearchStatus" class="meta" role="status" aria-live="polite" aria-atomic="true"></div><div class="results" id="results"><div class="meta">Escribe una consulta para comenzar.</div></div></section>
     <section class="panel wide"><h2>Memoria de proyectos</h2><div class="toolbar"><label for="projectPolicy">Proyecto detectado</label><select id="projectPolicy"><option value="">Sin proyectos registrados</option></select><button id="toggleProjectExclusion">Excluir proyecto del índice</button><span class="meta">El inventario es observacional; excluir conserva los archivos originales y oculta sus metadatos de esta vista.</span></div><div id="projectInventory" class="meta" role="status" aria-live="polite">Selecciona un proyecto para consultar tecnologías y dependencias declaradas.</div><div class="meta" id="projectPolicyStatus" aria-live="polite"></div></section>
     <section class="panel wide" id="sourcesPanel"><h2>Fuentes autorizadas</h2><div class="meta">Las rutas se previsualizan antes de añadirlas. Aprobar solo guarda configuración; la indexación requiere pulsar “Sincronizar fuentes”. Excluir una fuente retira sus documentos del índice (tombstones); los archivos originales no se modifican y puedes reactivarla después.</div><div class="toolbar" style="margin-top:10px"><label for="sourcePath">Ruta local absoluta</label><input id="sourcePath" autocomplete="off" placeholder="Ej. C:\Notas\Investigación" aria-describedby="sourceStatus"><label for="sourceKind">Tipo</label><select id="sourceKind"><option value="local">Local</option><option value="research">Investigación</option><option value="reference">Referencia</option></select><label for="sourceName">Nombre (opcional)</label><input id="sourceName" maxlength="120" placeholder="Nombre visible" style="max-width:190px"><button id="previewSourceBtn">Previsualizar</button></div><div id="sourceStatus" class="meta" role="status" aria-live="polite"></div><div id="sourcePreview" class="meta"></div><div id="authorizedSources" class="source-list" aria-live="polite"></div></section>
     <section class="panel wide">
@@ -99,7 +413,7 @@
       <div class="graph-workspace"><canvas id="graph" tabindex="0" role="group" aria-roledescription="visualización interactiva" aria-label="Grafo tridimensional de documentos. Usa las flechas para recorrer vecinos visibles, o el conjunto filtrado si no hay vecinos; Enter abre el documento y Escape limpia la selección." aria-describedby="graphStatus"></canvas><aside class="graph-side" id="graphInfo" aria-live="polite"><h3>Explorador del grafo</h3><div class="meta">Busca un nodo y pulsa Enter, o selecciona un punto; luego usa las flechas o los botones de vecinos. Las relaciones sugeridas son hipótesis.</div></aside></div>
     </section>
     <section class="panel" id="detail"><h2>Documento</h2><div class="meta">Selecciona un nodo o resultado.</div></section>
-    <section class="panel"><h2>Contexto recuperado</h2><pre id="context">Aquí aparecerán fragmentos limitados y sus citas.</pre></section>
+    <section class="panel"><h2>Contexto recuperado</h2><div id="contextStatus" class="meta" role="status" aria-live="polite" aria-atomic="true"></div><pre id="context">Aquí aparecerán fragmentos limitados y sus citas.</pre></section>
     <section class="panel wide" id="decisionPanel"><div class="toolbar"><h2 style="margin-right:auto">Decisiones y memoria técnica</h2><label>Buscar <input id="decisionQuery" placeholder="problema, decisión o componente" style="max-width:250px"></label><label>Proyecto <select id="decisionProject"><option value="">Todos</option></select></label><label>Tipo <select id="decisionType"><option value="">Todos</option><option value="decision">Decisión</option><option value="fact">Hecho</option><option value="proposal">Propuesta</option><option value="hypothesis">Hipótesis</option></select></label><label>Estado <select id="decisionStatus"><option value="">Todos</option><option value="confirmed">Confirmada</option><option value="proposed">Propuesta</option><option value="rejected">Rechazada</option><option value="superseded">Sustituida</option></select></label><button id="decisionRefresh">Buscar</button></div><div class="results" id="decisionRecords" aria-live="polite"><div class="meta">Cargando registros locales…</div></div></section>
   </main>
   <script>
@@ -179,16 +493,25 @@
     function searchMatchLabel(match){if(!match||match.complete)return '';const matched=Number(match.matched_terms),total=Number(match.total_terms);if(!Number.isSafeInteger(matched)||!Number.isSafeInteger(total)||matched<0||total<=0||matched>=total)return '';return `Coincidencia parcial: ${matched}/${total} términos`;}
     async function search(){
       const requestId=searchRequestGate.begin();
+      $('legacySearchStatus').textContent='Buscando en el índice local…';
       try{
         const data=await postJson('/api/search',searchParams());if(!searchRequestGate.isCurrent(requestId))return;
-        $('results').innerHTML=(data.results||[]).map(r=>`<div class="result" data-id="${r.document_id}" role="button" tabindex="0"><strong>${esc(r.title)}</strong><div>${esc(r.category)} · ${esc(r.source_kind)}${r.project?' · '+esc(r.project):''}</div><div class="meta">${esc(r.source_kind)} · ${esc(r.relative_path)} · ${esc(r.mtime||'')}</div>${r.tags?.length?`<div class="meta">Etiquetas: ${esc(r.tags.join(', '))}</div>`:''}${searchMatchLabel(r.query_match)?`<div class="meta">${esc(searchMatchLabel(r.query_match))}</div>`:''}<div class="snippet">${esc(r.snippet||'')}</div></div>`).join('')||'<div class="meta">Sin resultados.</div>';
+        const results=Array.isArray(data.results)?data.results:[];
+        $('results').innerHTML=results.map(r=>`<div class="result" data-id="${r.document_id}" role="button" tabindex="0"><strong>${esc(r.title)}</strong><div>${esc(r.category)} · ${esc(r.source_kind)}${r.project?' · '+esc(r.project):''}</div><div class="meta">${esc(r.source_kind)} · ${esc(r.relative_path)} · ${esc(r.mtime||'')}</div>${r.tags?.length?`<div class="meta">Etiquetas: ${esc(r.tags.join(', '))}</div>`:''}${searchMatchLabel(r.query_match)?`<div class="meta">${esc(searchMatchLabel(r.query_match))}</div>`:''}<div class="snippet">${esc(r.snippet||'')}</div></div>`).join('')||'<div class="meta">Sin resultados.</div>';
+        const resultCount=results.length;
+        $('legacySearchStatus').textContent=resultCount?(resultCount===1?'1 resultado local. Selecciona uno para ver sus detalles.':`${resultCount} resultados locales. Selecciona uno para ver sus detalles.`):'Sin resultados locales para estos filtros.';
         document.querySelectorAll('.result').forEach(el=>{const activate=()=>showDoc(Number(el.dataset.id));el.onclick=activate;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();activate();}};});
-      }catch(error){if(searchRequestGate.isCurrent(requestId))$('results').innerHTML=`<div class="error">Error al buscar: ${esc(error.message)}</div>`;}
+      }catch(error){if(searchRequestGate.isCurrent(requestId)){$('results').innerHTML=`<div class="error">Error al buscar: ${esc(error.message)}</div>`;$('legacySearchStatus').textContent='No se pudo completar la búsqueda local.';}}
     }
     async function retrieve(){
       const requestId=contextRequestGate.begin(),p=searchParams();p.limit=10;p.max_chars=12000;
-      try{const data=await postJson('/api/context',p);if(!contextRequestGate.isCurrent(requestId))return;$('context').textContent=(data.fragments||[]).map(f=>`[${f.title} · ${f.heading||'documento'} · líneas ${f.line_start}-${f.line_end}]\n${f.text}\nCITA: ${f.citation}`).join('\n\n')||'Sin fragmentos.';}
-      catch(error){if(contextRequestGate.isCurrent(requestId))$('context').textContent=`Error al recuperar contexto: ${error.message}`;}
+      $('contextStatus').textContent='Recuperando fragmentos citados…';
+      try{
+        const data=await postJson('/api/context',p);if(!contextRequestGate.isCurrent(requestId))return;
+        const fragments=Array.isArray(data.fragments)?data.fragments:[];
+        $('context').textContent=fragments.map(f=>`[${f.title} · ${f.heading||'documento'} · líneas ${f.line_start}-${f.line_end}]\n${f.text}\nCITA: ${f.citation}`).join('\n\n')||'Sin fragmentos.';
+        $('contextStatus').textContent=fragments.length?(fragments.length===1?'1 fragmento citado recuperado.':`${fragments.length} fragmentos citados recuperados.`):'No se encontraron fragmentos citados para estos filtros.';
+      }catch(error){if(contextRequestGate.isCurrent(requestId)){$('context').textContent=`Error al recuperar contexto: ${error.message}`;$('contextStatus').textContent='No se pudo recuperar el contexto citado.';}}
     }
     async function loadDecisions(){
       const requestId=decisionRequestGate.begin(),payload={limit:50};if($('decisionQuery').value.trim())payload.q=$('decisionQuery').value.trim();if($('decisionProject').value)payload.project_id=$('decisionProject').value;if($('decisionType').value)payload.type=$('decisionType').value;if($('decisionStatus').value)payload.status=$('decisionStatus').value;
@@ -198,7 +521,14 @@
         document.querySelectorAll('[data-open-decision]').forEach(button=>button.addEventListener('click',()=>openDoc(Number(button.dataset.openDecision))));
       }catch(error){if(decisionRequestGate.isCurrent(requestId))$('decisionRecords').innerHTML=`<div class="error">Error al consultar memorias: ${esc(error.message)}</div>`;}
     }
-    async function openDoc(id){const response=await fetch('/api/open/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const data=await response.json();if(!response.ok||data.error)alert(data.error||'No se pudo abrir el documento.');}
+    async function openDoc(id){
+      const status=$('operationStatus');status.textContent='Abriendo la fuente autorizada…';
+      try{
+        const response=await fetch('/api/open/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),data=await response.json();
+        if(!response.ok||data.error||data.opened!==true){status.textContent='No se pudo abrir la fuente autorizada. Reintenta desde el panel.';return;}
+        status.textContent='Se solicitó abrir el documento mediante la ruta autorizada.';
+      }catch(_error){status.textContent='No se pudo conectar con el servidor local para abrir la fuente. Reintenta desde el panel.';}
+    }
     async function showDoc(id){
       if(typeof graph!=='undefined'&&graph.nodes.some(node=>node.document_id===id&&node.entity_kind)){selectNode(id);return;}
       const requestId=documentRequestGate.begin();selected=id;drawGraph();renderGraphInfo();const detail=$('detail');detail.innerHTML='<div class="meta">Cargando documento…</div>';
@@ -229,11 +559,18 @@
         for(const e of graph.edges){const ai=byId.get(Number(e.source)),bi=byId.get(Number(e.target));if(ai===undefined||bi===undefined)continue;const a=positions.get(Number(e.source)),b=positions.get(Number(e.target));let dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z,dist=Math.sqrt(dx*dx+dy*dy+dz*dz)||1;const f=(dist-78)*(e.kind==='suggested'?.0015:.006);dx=dx/dist*f;dy=dy/dist*f;dz=dz/dist*f;forces[ai].x+=dx;forces[ai].y+=dy;forces[ai].z+=dz;forces[bi].x-=dx;forces[bi].y-=dy;forces[bi].z-=dz;}
         nodes.forEach((n,i)=>{const p=positions.get(n.document_id),f=forces[i];p.vx=(p.vx+f.x-p.x*.001)*.78;p.vy=(p.vy+f.y-p.y*.001)*.78;p.vz=(p.vz+f.z-p.z*.001)*.78;p.x=Math.max(-310,Math.min(310,p.x+p.vx));p.y=Math.max(-310,Math.min(310,p.y+p.vy));p.z=Math.max(-310,Math.min(310,p.z+p.vz));});}
     }
+    let graphIndexCache={graph:null,ids:null,nodeById:null,adjacency:null};
+    function getGraphIndex(){
+      if(graphIndexCache.graph===graph)return graphIndexCache;
+      const ids=new Set(graph.nodes.map(n=>n.document_id)),nodeById=new Map(graph.nodes.map(n=>[n.document_id,n])),adjacency=new Map(graph.nodes.map(n=>[n.document_id,new Set()]));
+      for(const e of graph.edges){const source=Number(e.source),target=Number(e.target);if(adjacency.has(source)&&adjacency.has(target)){adjacency.get(source).add(target);adjacency.get(target).add(source);}}
+      graphIndexCache={graph,ids,nodeById,adjacency};return graphIndexCache;
+    }
     function visibleGraph(){
-      const ids=new Set(graph.nodes.map(n=>n.document_id)),adj=new Map(graph.nodes.map(n=>[n.document_id,new Set()]));for(const e of graph.edges){if(adj.has(Number(e.source))&&adj.has(Number(e.target))){adj.get(Number(e.source)).add(Number(e.target));adj.get(Number(e.target)).add(Number(e.source));}}
+      const {ids,nodeById,adjacency:adj}=getGraphIndex();
       let visible=new Set(ids),neighbors=new Set();let depth=Number($('graphDepth').value)||0;if($('graphView').value==='document'&&selected&&depth===0)depth=1;
       if(selected&&depth>0&&ids.has(selected)){let frontier=new Set([selected]);visible=new Set(frontier);for(let i=0;i<depth;i++){const next=new Set();for(const id of frontier)for(const n of (adj.get(id)||[]))if(!visible.has(n)){visible.add(n);next.add(n);}frontier=next;}neighbors=new Set(adj.get(selected)||[]);}
-      if($('isolateCommunity').checked&&selected){const node=graph.nodes.find(n=>n.document_id===selected);if(node)visible=new Set([...visible].filter(id=>graph.nodes.find(n=>n.document_id===id)?.community===node.community));}
+      if($('isolateCommunity').checked&&selected){const node=nodeById.get(selected);if(node)visible=new Set([...visible].filter(id=>nodeById.get(id)?.community===node.community));}
       const query=$('graphSearch').value.trim().toLocaleLowerCase();let matches=new Set();if(query){for(const n of graph.nodes)if(`${n.title} ${n.relative_path}`.toLocaleLowerCase().includes(query))matches.add(n.document_id);const around=new Set(matches);for(const id of matches)for(const n of adj.get(id)||[])around.add(n);visible=new Set([...visible].filter(id=>around.has(id)));}
       return {nodes:graph.nodes.filter(n=>visible.has(n.document_id)),edges:graph.edges.filter(e=>visible.has(Number(e.source))&&visible.has(Number(e.target))),neighbors,matches};
     }
@@ -309,7 +646,7 @@
       side.querySelector('[data-open-selected]')?.addEventListener('click',()=>openDoc(node.document_id));
       side.querySelectorAll('[data-neighbor]').forEach(button=>button.addEventListener('click',()=>selectNode(Number(button.dataset.neighbor))));
     }
-    function selectNode(id){const node=graph.nodes.find(item=>item.document_id===id);if(node?.entity_kind){documentRequestGate.begin();selected=id;drawGraph();renderGraphInfo();$('detail').textContent=`${node.title}\n${node.summary||''}\nCITA: ${node.reference_url||'Consultar procedencia del nodo'}`;if(node.entity_kind==='vulnerability')document.dispatchEvent(new CustomEvent('rabanito-public-selection',{detail:{kind:node.entity_kind,id:node.entity_id}}));return;}void showDoc(id);}
+    function selectNode(id){const node=graph.nodes.find(item=>item.document_id===id);if(!node?.entity_kind)document.dispatchEvent(new CustomEvent('rabanito-command-selection',{detail:{id:String(id),node}}));if(node?.entity_kind){documentRequestGate.begin();selected=id;drawGraph();renderGraphInfo();$('detail').textContent=`${node.title}\n${node.summary||''}\nCITA: ${node.reference_url||'Consultar procedencia del nodo'}`;if(node.entity_kind==='vulnerability')document.dispatchEvent(new CustomEvent('rabanito-public-selection',{detail:{kind:node.entity_kind,id:node.entity_id}}));return;}void showDoc(id);}
     async function loadGraph(){
       const requestId=graphRequestGate.begin(),p={limit:Number($('graphLimit').value),suggestions:$('suggestions').checked?'1':'0',min_degree:$('minDegree').value};
       const domain=$('graphDomain')?.value||'documents';

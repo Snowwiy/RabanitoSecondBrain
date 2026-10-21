@@ -399,11 +399,11 @@ class KnowledgeGraphTests(unittest.TestCase):
         roots = self.pages(kind="vulnerability", limit=200)
         self.assertEqual(len(roots), total)
 
-    def test_warm_proof_is_invalidated_by_committed_native_change(self):
+    def test_persisted_epoch_proof_is_fast_and_invalidated_by_committed_native_change(self):
         self.sync()
         first = graph_page(self.settings, limit=1)
         warmed = graph_page(self.settings, limit=1)
-        self.assertEqual(first["coverage"]["source_validation"], "live_fingerprint_scan")
+        self.assertEqual(first["coverage"]["source_validation"], "epoch_validated_fingerprints")
         self.assertEqual(warmed["coverage"]["source_validation"], "epoch_validated_fingerprints")
         with Database(self.settings.database_path) as db:
             before = db.one("SELECT value FROM kg_epoch")[0]
@@ -479,6 +479,8 @@ class KnowledgeGraphTests(unittest.TestCase):
         copied = self.settings.data_dir / "proof-copy.db"
         with Database(self.settings.database_path, read_only=True) as db:
             db.backup(copied)
+        with Database(copied) as db:
+            db.execute("UPDATE kg_state SET value='' WHERE key='last_complete_source_version'")
         other = Settings(self.root, {**self.settings.raw, "database_path": str(copied)})
         self.assertEqual(graph_page(other)["coverage"]["source_validation"], "live_fingerprint_scan")
         self.assertEqual(graph_page(other)["coverage"]["source_validation"], "epoch_validated_fingerprints")

@@ -67,27 +67,33 @@ class GraphSnapshotReuseTests(unittest.TestCase):
 
     def proof_calls(self):
         result, calls = self.cold(kind="vulnerability", limit=0)
-        self.assertGreater(calls, 0)
         return result, calls
 
-    def test_clean_cold_page_reuses_full_global_validation_in_same_snapshot(self):
-        _, expected = self.proof_calls()
+    def test_clean_persisted_epoch_proof_skips_descriptor_scan_for_page(self):
         result, calls = self.cold(kind="vulnerability", limit=50)
-        self.assertEqual(calls, expected)
+        self.assertEqual(calls, 0)
+        self.assertEqual(result["coverage"]["source_validation"], "epoch_validated_fingerprints")
+        self.assertFalse(result["coverage"]["requires_sync"])
+        self.assertEqual({n["id"] for n in result["nodes"]}, {"vulnerability:" + CVE, "vulnerability:" + OTHER})
+
+    def test_cleared_persisted_version_forces_global_live_validation(self):
+        with Database(self.settings.database_path, initialize=False) as db:
+            db.execute("UPDATE kg_state SET value='' WHERE key='last_complete_source_version'")
+        result, calls = self.cold(kind="vulnerability", limit=50)
+        self.assertGreater(calls, 0)
         self.assertEqual(result["coverage"]["source_validation"], "live_fingerprint_scan")
         self.assertFalse(result["coverage"]["requires_sync"])
         self.assertEqual({n["id"] for n in result["nodes"]}, {"vulnerability:" + CVE, "vulnerability:" + OTHER})
-        # Public kind selection must not narrow validation to public inputs.
+        # A public kind filter still validates local and project inputs globally.
         self.assertTrue(any("Local fixture" in args for args in self.fingerprints))
         self.assertTrue(any("Alpha" in args for args in self.fingerprints))
 
-    def test_clean_cold_neighbors_reuse_validation_across_internal_selects(self):
-        _, expected = self.proof_calls()
+    def test_clean_persisted_epoch_proof_skips_descriptor_scan_for_neighbors(self):
         result, calls = self.cold(graph_neighbors, node_id="vulnerability:" + CVE, limit=50)
-        self.assertEqual(calls, expected)
+        self.assertEqual(calls, 0)
         self.assertTrue(result["anchor_visible"])
         self.assertTrue(result["edges"])
-        self.assertEqual(result["coverage"]["source_validation"], "live_fingerprint_scan")
+        self.assertEqual(result["coverage"]["source_validation"], "epoch_validated_fingerprints")
 
     def test_missing_watchers_still_force_fingerprints_and_require_sync(self):
         with Database(self.settings.database_path, initialize=False) as db:
@@ -130,13 +136,13 @@ class GraphSnapshotReuseTests(unittest.TestCase):
         self.assertTrue(all(n["contributor_project_id"] != pid for n in result["nodes"]))
         self.assertTrue(result["coverage"]["requires_sync"])
 
-    def test_warm_proof_remains_distinct_from_cold_full_validation(self):
+    def test_persisted_proof_remains_valid_across_separate_read_connections(self):
         first, _ = self.cold(kind="vulnerability", limit=50)
         self.fingerprints = []
         with patch.object(query, "configure", self.counted_configure):
             second = graph_page(self.settings, kind="vulnerability", limit=50)
         self.assertEqual(first["nodes"], second["nodes"])
-        self.assertEqual(first["coverage"]["source_validation"], "live_fingerprint_scan")
+        self.assertEqual(first["coverage"]["source_validation"], "epoch_validated_fingerprints")
         self.assertEqual(second["coverage"]["source_validation"], "epoch_validated_fingerprints")
         self.assertEqual(self.fingerprints, [])
 

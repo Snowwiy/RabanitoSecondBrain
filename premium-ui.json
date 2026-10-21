@@ -8,7 +8,7 @@
   "requiredCommands": ["unit", "ui"],
   "commands": {
     "unit": "python -B -m unittest discover -s tests -q",
-    "ui": "node --test tests/test_cyber_ui.mjs tests/test_graph_filter.mjs"
+    "ui": "node --test tests/test_cyber_ui.mjs tests/test_graph_filter.mjs tests/test_neural_command_center.mjs"
   },
   "evidence": {
     "crudFullFlow": "tests/test_cyber.py",

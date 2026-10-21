@@ -546,6 +546,8 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                     result[key] = value
                 return result
             raw_payload = self.rfile.read(content_length) or b"{}"
+            if parsed.path.startswith("/api/knowledge-graph") and (parsed.query or parsed.params or parsed.fragment):
+                raise ValueError("invalid_graph_request_url")
             payload = json.loads(raw_payload, object_pairs_hook=unique_graph_fields) if parsed.path.startswith(("/api/knowledge-graph", "/api/attack/")) or parsed.path == "/api/coding/documented" else json.loads(raw_payload)
             if not isinstance(payload, dict):
                 raise ValueError("JSON object required")

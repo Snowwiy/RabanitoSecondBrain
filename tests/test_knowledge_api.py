@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import http.client
 import threading
 import unittest
 from contextlib import contextmanager
@@ -75,6 +76,24 @@ class KnowledgeApiTests(unittest.TestCase):
                     response.close()
                 self.assertEqual(caught.exception.code, expected)
                 caught.exception.close()
+
+    def test_typed_graph_rejects_query_parameters_and_fragments(self):
+        with self.server() as origin:
+            port = int(origin.rsplit(":", 1)[1])
+            for target in ("/api/knowledge-graph?private=1", "/api/knowledge-graph;private", "/api/knowledge-graph#private"):
+                with self.subTest(target=target):
+                    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+                    try:
+                        connection.request("POST", target, body=b"{}", headers={
+                            "Origin": origin,
+                            "Content-Type": "application/json",
+                            "Content-Length": "2",
+                        })
+                        response = connection.getresponse()
+                        self.assertEqual(response.status, 400)
+                        self.assertEqual(json.loads(response.read()), {"error": "invalid_graph_request_url"})
+                    finally:
+                        connection.close()
 
     def test_module_asset_is_fixed_local_javascript_and_traversal_is_not_served(self):
         with self.server() as origin:
