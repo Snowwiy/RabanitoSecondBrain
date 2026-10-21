@@ -3,7 +3,7 @@
 ## Combined integration checkpoint (2026-10-21)
 
 - Integration worktree: dedicated branch `integration/rabanito-3.0`; `origin/main` backend base `c1f11ce12240caf2a085cc299ddf243676095da6`; `origin/Frontend-Design` source `39b572f28dc6f60915d44bc8b6ad790f78d1c386`. This section is authoritative for the combined integration; historical Frontend-Design preflights below describe earlier phases.
-- `integration/rabanito-3.0` was fast-forwarded from its prior remote commit `5109981a794a41bb7b646beca61ad11045f18ea5` to `origin/main`, then merged with `origin/Frontend-Design` locally. No changes were made to either source branch. Full Python/Node suites and live pagination QA now pass; the worktree is ready for commit and publication to this integration branch only.
+- `integration/rabanito-3.0` was fast-forwarded from its prior remote commit `5109981a794a41bb7b646beca61ad11045f18ea5` to `origin/main`, then merged with `origin/Frontend-Design`. Merge commit `e14f9477e3294776d88126940933a382548b44de` was pushed normally to `origin/integration/rabanito-3.0`; neither source branch was modified. The GitHub connector rejected PR creation with HTTP 403 (`Resource not accessible by integration`) and `gh` is unavailable. The comparison is [ready for opening as a PR](https://github.com/Snowwiy/RabanitoSecondBrain/compare/main...integration/rabanito-3.0?expand=1); no PR exists and nothing was merged.
 - Seven textual conflicts were resolved individually:
 
 | File | Resolution retained from Sol/backend | Resolution retained from Luna/frontend | Validation or reason |

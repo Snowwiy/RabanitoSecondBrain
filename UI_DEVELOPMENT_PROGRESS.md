@@ -9,6 +9,7 @@
 - Visual QA was limited to the in-app browser's approximately 445px viewport. It verified real local graph data, the reader's earlier real authorized Obsidian smoke, and Tree/Hex/3D navigation; true 1080p/1440p screenshots and browser console logs were unavailable in this session.
 - No production source bytes, credentials, `main` worktree, or `Frontend-Design` worktree were changed. The original database sidecar filesystem mtime changed during read-only SQLite access while its size/hash remained identical. The only graph projection sync during QA was run on the ignored temporary SQLite snapshot.
 - Remaining integration risks: no screen-reader certification, true browser zoom, or browser heap/frame-time profile; the Coding Memory catalog has no reviewed matching records in the verified dataset; public connector freshness may be pending. Re-evaluate these before classifying the PR as ready to merge.
+- The combined merge commit `e14f9477e3294776d88126940933a382548b44de` is published to `origin/integration/rabanito-3.0`. The GitHub connector returned 403 when asked to open a PR and no `gh` CLI is installed, so the PR could not be created from this session. Use the compare link in `UI_INTEGRATION_PLAN.md` when GitHub write access is available.
 
 ## Current checkpoint
 
