@@ -1,13 +1,21 @@
 # UI development progress
 
-## Final validation checkpoint (2026-10-21)
+## Data-integrity incident investigation (2026-10-21)
+
+- Corrected the prior QA report: its DB fingerprint compared the main checkout, not `integration/rabanito-3.0/data/rabanito.db`. The old statement does not prove the integration DB was intact.
+- Read-only evidence from file metadata and the consistent backup shows scan 1 added 338 files at 12:45:14 UTC; scan 2 at 12:46:39 UTC saw zero files and removed 338. The backup was created after the second scan, passes `integrity_check`, and contains 338 deleted documents.
+- Browser QA settings mapped to a SQLite copy and temporary data directory. The Python suite does call the indexer for fixture tests, but static inspection shows `Settings` roots are per-test temporary directories; its explicit `/api/index` regression also uses a temporary DB. No direct QA config path to the integration DB was found.
+- The initiating process remains unknown. Scan metadata has no PID/command; Sysmon and Security 4688 logs were unavailable. Since the scan falls within the broader QA window, concurrent activity cannot be ruled out. No restore, index, cleanup, source mutation, or code correction was performed in this investigation.
+- The integration is **NO LISTO** for main review until trigger attribution and an authorized healthy recovery source are established. Further QA must use synthetic data or isolated copies only.
+
+## Final validation checkpoint (historical; superseded by incident)
 
 - Final regression is green: Python **1,029 passed, 1 skipped**; Node **84 passed**; `git diff --check` passed. Full results and limitations are in `UI_TEST_RESULTS.md`.
 - Visual QA used the live combined dashboard in a real browser at 1920×1080 and 2560×1440 against a copied SQLite index. Orbit, Hex, Galaxy 3D, Tree, search/source/category filters, pagination, node selection, inspector/reader, zoom, drag, keyboard navigation and console logs were checked. No horizontal overflow or browser warning/error was observed.
 - Fixed the verified desktop overflow: the graph stage had grown with long side-panel contents. The command center now uses a viewport-bounded height, side panels own their vertical scroll, and graph views fit within the center stage.
-- The real authorized Obsidian Markdown reader returned 204 bytes and one recognized reference. Reader and source authorization tests passed. Original SQLite/WAL content and the sampled Obsidian note matched the pre-QA baseline; `PRAGMA integrity_check` returned `ok`. The SHM bytes match, though its filesystem mtime differs.
+- The real authorized Obsidian Markdown reader returned 204 bytes and one recognized reference. Reader and source authorization tests passed. The earlier DB/WAL comparison was against the main checkout and does not certify the integration DB. Only the sampled Obsidian note matched its baseline. The post-incident backup's `PRAGMA integrity_check=ok` confirms SQLite structure, not healthy document contents.
 - Accessibility tree and keyboard behavior passed for the four view tabs, graph canvas instructions, node list, selection and paging. Narrator was unavailable to this controller for speech/UI verification. Browser FPS, frame times, heap and large-graph load times remain unmeasured because those APIs/profiler are not exposed by the browser harness.
-- Delivery classification: **LISTO CON LIMITACIONES**. The only outstanding validation is manual Windows screen-reader and Edge/Chrome performance profiling before an unqualified merge recommendation. No new features were added.
+- The prior **LISTO CON LIMITACIONES** delivery classification is superseded by the data-integrity incident; current status is **NO LISTO**. No new features were added.
 
 ## Initial combined integration checkpoint (2026-10-21; historical integration record)
 

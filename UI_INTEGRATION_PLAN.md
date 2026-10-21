@@ -1,17 +1,25 @@
 # UI integration plan
 
-## Final validation status (2026-10-21)
+## Data-integrity incident — investigation status (2026-10-21)
+
+- The previous final-QA statement that the integration DB was unchanged was incorrect: its hash script inspected the main checkout DB, not `integration/rabanito-3.0/data/rabanito.db`. That claim is withdrawn in `UI_TEST_RESULTS.md`.
+- Read-only file metadata and the existing backup establish two successful scans: 338 records added at 12:45:14 UTC, then zero files seen and 338 records removed at 12:46:39 UTC. The backup's integrity check is `ok`, but it was created after the removal scan and contains those 338 deleted rows.
+- The browser QA server used a separate SQLite copy under `tests/.test-temp/.../integration-snapshot.db` and a separate temp data directory. Dashboard startup is read-only; `index_all` is reached only through explicit index or project-exclusion routes, which were not used in QA.
+- The Python suite calls `index_all` for tests, but static inspection shows per-test temporary settings; its explicit API-index regression also uses a temporary DB. This does not explain the integration DB write. The event timestamps overlap the QA period, so concurrent activity cannot be excluded. Scan metadata contains no process identity; Sysmon/Security process auditing was unavailable.
+- Root-cause attribution is **unresolved**. No product fix or database action is proposed or performed. Keep this branch **NO LISTO** for main review until the trigger and an authorized healthy recovery source are independently established. Any further QA must use synthetic data or isolated copies.
+
+## Desktop validation status (historical; superseded by incident)
 
 - The integration remains on the isolated `integration/rabanito-3.0` branch. This QA pass changed only the desktop panel sizing/scroll behavior in `web/index.html` and its validation/continuity records. Source branches, the main checkout and Sol's worktree were not modified.
 - A real layout defect was corrected after comparing live screenshots at 1920×1080 and 2560×1440: long side panels no longer stretch the graph stage; the command center is viewport-bounded and the explorer/inspector scroll independently. Both sizes had zero horizontal overflow and the console had no warnings/errors.
-- Python regression: **1,029 passed, 1 skipped**. Node regression: **84 passed**. Source-authorization tests, Markdown reader, graph filtering/paging, keyboard navigation and integrated backend tests are covered by these suites. Read-only SQLite integrity check returned `ok`; database/WAL hashes remained unchanged and the sampled Obsidian note's hash/size/mtime matched baseline.
+- Python regression: **1,029 passed, 1 skipped**. Node regression: **84 passed**. Source-authorization tests, Markdown reader, graph filtering/paging, keyboard navigation and integrated backend tests are covered by these suites. The earlier DB hash comparison was against the main checkout, not the integration database; see the incident investigation above.
 - The real authorized Markdown reader, four graph views, search/filtering, selection, typed and document pagination, Orbit zoom/drag and accessible keyboard paths were exercised against the isolated copy. Detailed evidence and exact viewport geometry are in `UI_TEST_RESULTS.md`.
-- Classification: **LISTO CON LIMITACIONES**. Before an unqualified merge recommendation, manually validate with Windows Narrator and record browser FPS/frame-time, JavaScript heap, and large-graph load timings in Edge/Chrome DevTools. The browser harness cannot expose those performance APIs; no metrics were inferred from algorithm tests.
+- The earlier **LISTO CON LIMITACIONES** classification is superseded by this data-integrity incident. Current status is **NO LISTO**; resolve the incident before any main-integration recommendation. Reader, browser performance and screen-reader limitations remain separately documented.
 - This checkpoint does not merge or create a PR. The previously recorded GitHub 403 remains the reason no PR was opened. Re-check refs before future review; publish only to `origin/integration/rabanito-3.0`.
 
 ## Initial combined integration checkpoint (2026-10-21; historical merge record)
 
-- Integration worktree: dedicated branch `integration/rabanito-3.0`; `origin/main` backend base `c1f11ce12240caf2a085cc299ddf243676095da6`; `origin/Frontend-Design` source `39b572f28dc6f60915d44bc8b6ad790f78d1c386`. This section is authoritative for the combined integration; historical Frontend-Design preflights below describe earlier phases.
+- Integration worktree: dedicated branch `integration/rabanito-3.0`; `origin/main` backend base `c1f11ce12240caf2a085cc299ddf243676095da6`; `origin/Frontend-Design` source `39b572f28dc6f60915d44bc8b6ad790f78d1c386`. This is the historical merge record; the data-integrity incident section above is authoritative for current status.
 - `integration/rabanito-3.0` was fast-forwarded from its prior remote commit `5109981a794a41bb7b646beca61ad11045f18ea5` to `origin/main`, then merged with `origin/Frontend-Design`. Merge commit `e14f9477e3294776d88126940933a382548b44de` was pushed normally to `origin/integration/rabanito-3.0`; neither source branch was modified. The GitHub connector rejected PR creation with HTTP 403 (`Resource not accessible by integration`) and `gh` is unavailable. The comparison is [ready for opening as a PR](https://github.com/Snowwiy/RabanitoSecondBrain/compare/main...integration/rabanito-3.0?expand=1); no PR exists and nothing was merged.
 - Seven textual conflicts were resolved individually:
 

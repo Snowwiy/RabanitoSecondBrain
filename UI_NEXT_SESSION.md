@@ -1,12 +1,19 @@
 # UI next session checkpoint
 
-## Final validation checkpoint — 2026-10-21
+## Data-integrity incident — current authoritative status (2026-10-21)
+
+- The existing backup contains two scans: 338 records added at 12:45:14 UTC; a second `ok` scan at 12:46:39 UTC saw zero files and marked all 338 removed. The backup passes `integrity_check` but was created after the incident and contains the deleted status.
+- Correction: the prior QA hash check used the main checkout DB, not integration `data/rabanito.db`. The browser server did use a copied DB and separate temp data directory; Python tests indexed fixture databases in per-test temporary roots. These findings do not identify the process that wrote the integration DB.
+- Attribution remains unresolved because scan records have no process identity and Windows process/file audit logs were unavailable. No database operation, restoration, cleanup, source mutation, or application fix was performed. The affected DB was not opened.
+- Current classification: **NO LISTO** for main review. Keep any further validation on synthetic data or isolated copies. Do not run index, restore, cleanup, or source operations on the affected database. Establish cause and identify an authorized healthy recovery source before proposing corrective action.
+
+## Final validation checkpoint (historical; superseded by incident)
 
 - Work stayed in the dedicated `integration/rabanito-3.0` worktree. The published integration merge was not repeated. Neither `main`, `Frontend-Design`, nor Sol's worktree was changed.
 - Fixed the desktop command-center overflow found by real-browser QA. The command center is height-bounded at desktop widths, the explorer and inspector scroll independently, and the graph stage now fits at **1920×1080** and **2560×1440**. Both layouts had zero horizontal overflow and no console warnings/errors.
 - Validation: Python **1,029 passed, 1 skipped**; Node **84 passed**; `git diff --check` passed. The real Markdown reader, source authorization tests, Orbit/Hex/Galaxy/Tree, search/filters, pagination, node selection, keyboard routes, zoom and dragging were checked. The real authorized Obsidian reader showed Markdown, metadata and one reference from a copied read-only index.
-- Original database and WAL hashes/size/mtime and sampled Obsidian note hash/size/mtime match baseline. SHM hash/size match but mtime differs. SQLite `integrity_check` is `ok`. No index, source approval, original graph sync, or write route was used.
-- Classification: **LISTO CON LIMITACIONES**. Before an unqualified merge recommendation, manually run Narrator and record FPS/frame-time, JavaScript heap, and graph-switch/load timings with Edge/Chrome DevTools at 1920×1080 and 2560×1440. This session's browser harness cannot measure those metrics; no algorithm timing is being substituted for rendering data.
+- The former DB hash claim applied to the main checkout; it does not certify integration `data/rabanito.db`. Only the sampled Obsidian note matched its baseline. `integrity_check=ok` on the post-incident backup does not prove its content state is healthy.
+- The previous **LISTO CON LIMITACIONES** classification is superseded. Current status is **NO LISTO** while the cause and authorized recovery source remain unknown. Browser profiling and Narrator checks also remain pending.
 - Final QA is complete for this request. Do not start another implementation phase from this checkpoint; only close the listed manual validation gaps before asking for main-merge review.
 
 ## Initial combined-integration checkpoint (2026-10-21; historical integration record)
