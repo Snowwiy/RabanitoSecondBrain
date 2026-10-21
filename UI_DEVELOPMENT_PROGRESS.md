@@ -1,6 +1,15 @@
 # UI development progress
 
-## Combined integration checkpoint (2026-10-21)
+## Final validation checkpoint (2026-10-21)
+
+- Final regression is green: Python **1,029 passed, 1 skipped**; Node **84 passed**; `git diff --check` passed. Full results and limitations are in `UI_TEST_RESULTS.md`.
+- Visual QA used the live combined dashboard in a real browser at 1920×1080 and 2560×1440 against a copied SQLite index. Orbit, Hex, Galaxy 3D, Tree, search/source/category filters, pagination, node selection, inspector/reader, zoom, drag, keyboard navigation and console logs were checked. No horizontal overflow or browser warning/error was observed.
+- Fixed the verified desktop overflow: the graph stage had grown with long side-panel contents. The command center now uses a viewport-bounded height, side panels own their vertical scroll, and graph views fit within the center stage.
+- The real authorized Obsidian Markdown reader returned 204 bytes and one recognized reference. Reader and source authorization tests passed. Original SQLite/WAL content and the sampled Obsidian note matched the pre-QA baseline; `PRAGMA integrity_check` returned `ok`. The SHM bytes match, though its filesystem mtime differs.
+- Accessibility tree and keyboard behavior passed for the four view tabs, graph canvas instructions, node list, selection and paging. Narrator was unavailable to this controller for speech/UI verification. Browser FPS, frame times, heap and large-graph load times remain unmeasured because those APIs/profiler are not exposed by the browser harness.
+- Delivery classification: **LISTO CON LIMITACIONES**. The only outstanding validation is manual Windows screen-reader and Edge/Chrome performance profiling before an unqualified merge recommendation. No new features were added.
+
+## Initial combined integration checkpoint (2026-10-21; historical integration record)
 
 - Current worktree is the isolated `integration/rabanito-3.0` branch. Its base includes verified backend `origin/main` commit `c1f11ce12240caf2a085cc299ddf243676095da6` and the Neural Command Center from `origin/Frontend-Design` commit `39b572f28dc6f60915d44bc8b6ad790f78d1c386`.
 - The seven merge conflicts and file-by-file preservation decisions are recorded in `UI_INTEGRATION_PLAN.md`. Main's CLI/server and source-authorization behavior were retained, while the frontend's typed graph consumers and UI assets remain integrated.

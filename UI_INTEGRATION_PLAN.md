@@ -1,6 +1,15 @@
 # UI integration plan
 
-## Combined integration checkpoint (2026-10-21)
+## Final validation status (2026-10-21)
+
+- The integration remains on the isolated `integration/rabanito-3.0` branch. This QA pass changed only the desktop panel sizing/scroll behavior in `web/index.html` and its validation/continuity records. Source branches, the main checkout and Sol's worktree were not modified.
+- A real layout defect was corrected after comparing live screenshots at 1920×1080 and 2560×1440: long side panels no longer stretch the graph stage; the command center is viewport-bounded and the explorer/inspector scroll independently. Both sizes had zero horizontal overflow and the console had no warnings/errors.
+- Python regression: **1,029 passed, 1 skipped**. Node regression: **84 passed**. Source-authorization tests, Markdown reader, graph filtering/paging, keyboard navigation and integrated backend tests are covered by these suites. Read-only SQLite integrity check returned `ok`; database/WAL hashes remained unchanged and the sampled Obsidian note's hash/size/mtime matched baseline.
+- The real authorized Markdown reader, four graph views, search/filtering, selection, typed and document pagination, Orbit zoom/drag and accessible keyboard paths were exercised against the isolated copy. Detailed evidence and exact viewport geometry are in `UI_TEST_RESULTS.md`.
+- Classification: **LISTO CON LIMITACIONES**. Before an unqualified merge recommendation, manually validate with Windows Narrator and record browser FPS/frame-time, JavaScript heap, and large-graph load timings in Edge/Chrome DevTools. The browser harness cannot expose those performance APIs; no metrics were inferred from algorithm tests.
+- This checkpoint does not merge or create a PR. The previously recorded GitHub 403 remains the reason no PR was opened. Re-check refs before future review; publish only to `origin/integration/rabanito-3.0`.
+
+## Initial combined integration checkpoint (2026-10-21; historical merge record)
 
 - Integration worktree: dedicated branch `integration/rabanito-3.0`; `origin/main` backend base `c1f11ce12240caf2a085cc299ddf243676095da6`; `origin/Frontend-Design` source `39b572f28dc6f60915d44bc8b6ad790f78d1c386`. This section is authoritative for the combined integration; historical Frontend-Design preflights below describe earlier phases.
 - `integration/rabanito-3.0` was fast-forwarded from its prior remote commit `5109981a794a41bb7b646beca61ad11045f18ea5` to `origin/main`, then merged with `origin/Frontend-Design`. Merge commit `e14f9477e3294776d88126940933a382548b44de` was pushed normally to `origin/integration/rabanito-3.0`; neither source branch was modified. The GitHub connector rejected PR creation with HTTP 403 (`Resource not accessible by integration`) and `gh` is unavailable. The comparison is [ready for opening as a PR](https://github.com/Snowwiy/RabanitoSecondBrain/compare/main...integration/rabanito-3.0?expand=1); no PR exists and nothing was merged.

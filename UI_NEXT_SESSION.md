@@ -1,6 +1,15 @@
 # UI next session checkpoint
 
-## Authoritative combined-integration checkpoint — 2026-10-21
+## Final validation checkpoint — 2026-10-21
+
+- Work stayed in the dedicated `integration/rabanito-3.0` worktree. The published integration merge was not repeated. Neither `main`, `Frontend-Design`, nor Sol's worktree was changed.
+- Fixed the desktop command-center overflow found by real-browser QA. The command center is height-bounded at desktop widths, the explorer and inspector scroll independently, and the graph stage now fits at **1920×1080** and **2560×1440**. Both layouts had zero horizontal overflow and no console warnings/errors.
+- Validation: Python **1,029 passed, 1 skipped**; Node **84 passed**; `git diff --check` passed. The real Markdown reader, source authorization tests, Orbit/Hex/Galaxy/Tree, search/filters, pagination, node selection, keyboard routes, zoom and dragging were checked. The real authorized Obsidian reader showed Markdown, metadata and one reference from a copied read-only index.
+- Original database and WAL hashes/size/mtime and sampled Obsidian note hash/size/mtime match baseline. SHM hash/size match but mtime differs. SQLite `integrity_check` is `ok`. No index, source approval, original graph sync, or write route was used.
+- Classification: **LISTO CON LIMITACIONES**. Before an unqualified merge recommendation, manually run Narrator and record FPS/frame-time, JavaScript heap, and graph-switch/load timings with Edge/Chrome DevTools at 1920×1080 and 2560×1440. This session's browser harness cannot measure those metrics; no algorithm timing is being substituted for rendering data.
+- Final QA is complete for this request. Do not start another implementation phase from this checkpoint; only close the listed manual validation gaps before asking for main-merge review.
+
+## Initial combined-integration checkpoint (2026-10-21; historical integration record)
 
 - Continue in the dedicated `integration/rabanito-3.0` worktree only. Backend source: `origin/main` `c1f11ce12240caf2a085cc299ddf243676095da6`; frontend source: `origin/Frontend-Design` `39b572f28dc6f60915d44bc8b6ad790f78d1c386`. The remote integration branch started at `5109981a794a41bb7b646beca61ad11045f18ea5`, was fast-forwarded to main, and merge commit `e14f9477e3294776d88126940933a382548b44de` was published normally.
 - Seven merge conflicts were resolved file-by-file and are recorded in `UI_INTEGRATION_PLAN.md`. Main's CLI/server/source-protection behavior is retained; frontend graph UI, reader adapter, tests and docs are retained. No source branch was modified.

@@ -231,6 +231,14 @@
     .legacy-workbench[open] > summary { border-radius:8px 8px 0 0; color:var(--accent); }
     .legacy-workbench .legacy-grid { padding-top:12px; }
     .legacy-workbench .module-focus-target:focus { outline:2px solid var(--accent); outline-offset:3px; }
+    @media(min-width:841px) {
+      .nc-command-center { height:max(560px,calc(100vh - 132px)); min-height:560px; }
+      .nc-explorer,.nc-inspector { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+      .nc-stage { min-height:0; overflow:hidden; }
+      .nc-visual { min-height:0; flex:1 1 0; }
+      #ncOrbitCanvas { min-height:0; }
+      .nc-hex-grid,.nc-tree,#ncPanelGalaxy { min-height:0; overflow:auto; }
+    }
     @media(max-width:1120px) {
       .nc-command-center { --left-width:230px; --right-width:270px; }
       .nc-controls .nc-field { width:145px; }
