@@ -28,6 +28,24 @@ Para consultas públicas de CVE, EPSS, Zero Trust o controles, lee `<SECOND_BRAI
 6. Conserva las citas de archivo y línea que devuelve la CLI. Acota consultas sucesivas; no cargues documentos completos ni toda la base en el prompt.
 7. `python -m rabanito audit` revisa frescura, enlaces y calidad en modo de solo lectura. No ejecutes `index` salvo que la tarea autorice actualizar el índice. Si se solicita, `index` actualiza el índice incremental y regenera perfiles derivados de documentación; nunca edites fuentes originales. No uses `--force` para resolver un fallo de acceso.
 
+## Experiencias documentadas de entorno
+
+Para relatos aprobados con evidencia histórica parcial, lee
+`<SECOND_BRAIN_ROOT>\docs\DOCUMENTED_MEMORY.md`. No requieren proyecto activo
+ni registrar un repositorio: consulta
+`python -m rabanito coding documented "problema o tecnología" --limit 3 --max-chars 2000`
+desde el checkout, conservando
+citas, atribución y límites; no presentarlos como soluciones verificadas.
+
+Para registrar uno, usa `coding preview-documented --stdin --reviewed-on` y
+muestra el Markdown exacto. Solo tras aprobación humana de ese texto usa el
+comando separado `coding save-documented` con el mismo JSON/fecha y
+`--approve-digest` aprobado. Calcular un digest NO acredita consentimiento;
+no autoaprobar ni usar `decision add --status confirmed` para promover el relato.
+Si devuelve exit2/index_pending, la nota ya está guardada: no borrarla ni crear
+otra; revisar el error y reintentar el mismo candidato aprobado. No hay escritor
+HTTP ni instalación de Skills implícita. El preflight del intérprete sigue vigente.
+
 ## Registrar una decisión o experiencia de programación
 
 Solo guarda una memoria si el usuario pide registrar conocimiento o aprueba explícitamente el borrador exacto. Antes de escribir, presenta proyecto, clasificación, problema/causa documentada, solución, motivo, tecnologías, componentes, pruebas/resultados y referencias. Si la evidencia no permite verificarlo, declara esa limitación y no marques el registro como confirmado.

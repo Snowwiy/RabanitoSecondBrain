@@ -66,6 +66,7 @@ def _verified_records(settings: Settings, query: str, project: str | None, techn
                   "rabanito_path_key(d.source_root)=?", f"json_extract({fm},'$.kind')='verified-memory'",
                   f"json_extract({fm},'$.status')='confirmed'", f"json_extract({fm},'$.validation')='passed'",
                   f"json_extract({fm},'$.record_type') IN ('decision','fact')", "p.status='active'",
+                  "rabanito_document_eligible(d.source_kind,d.relative_path)=1",
                   f"rabanito_project_visible('internal',p.name,{root_sql})=1"]
     params = [path_key(settings.knowledge_root)]
     if document_id is not None:

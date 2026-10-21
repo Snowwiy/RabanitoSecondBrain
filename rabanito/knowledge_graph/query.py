@@ -9,10 +9,11 @@ import threading
 from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from copy import deepcopy
 from pathlib import Path
 
 from ..coding_memory import _verified_records
-from ..config import Settings
+from ..config import SETTINGS_WRITE_LOCK, Settings
 from ..db import Database
 from ..utils import path_key
 from .projection import stamp
@@ -157,7 +158,12 @@ def _context(db, settings, project, options, mode, anchor=None):
     scope = " AND (n.project_id IS NULL OR n.project_id=:pid)" if pid is not None else ""
     edge_scope = " AND (e.project_id IS NULL OR e.project_id=:pid)" if pid is not None else ""
     params = {"pid": pid, "include_inactive": int(options["include_inactive"])}
-    cte = ("WITH L AS MATERIALIZED (SELECT g.* FROM kg_inputs g WHERE g.active=1), " if fast else
+    # The complete fingerprint check above used this same read transaction and
+    # permission snapshot. With no missing/stale or obsolete inputs, every active
+    # g row already matches U; recomputing U for each subsequent SELECT adds no
+    # validation. Keep the join when dirty so stale/revoked claims stay hidden.
+    inputs_clean = not missing and not obsolete
+    cte = ("WITH L AS MATERIALIZED (SELECT g.* FROM kg_inputs g WHERE g.active=1), " if inputs_clean else
            prefix.rstrip() + ", L AS MATERIALIZED (SELECT g.* FROM kg_inputs g JOIN U ON U.k=g.input_key AND U.fp=g.fingerprint WHERE g.active=1), ")
     node_focus = ""
     if mode == "neighbors":
@@ -279,6 +285,10 @@ def graph_page(settings: Settings, *, kind="all", project=None, query="", source
                risk=None, since=None, until=None, limit=50, cursor=None, suggestions=False, include_inactive=False) -> dict:
     options = _options(kind, query, source, category, risk, since, until, limit, suggestions, include_inactive)
     _project_argument(project)
+    # The SQL permissions and the cached proof signature must describe the SAME
+    # configuration, even if a caller updates its mutable Settings.raw mid-read.
+    with SETTINGS_WRITE_LOCK:
+        settings = Settings(settings.root, deepcopy(settings.raw))
     if not settings.database_path.is_file():
         return _empty(reason="index_unavailable")
     with _read(settings) as db:
@@ -312,6 +322,8 @@ def graph_neighbors(settings: Settings, node_id: str, *, kind="all", query="", c
         raise ValueError("invalid_graph_node_identifier")
     options = _options(kind, query, source, category, risk, since, until, limit, suggestions, include_inactive)
     _project_argument(project)
+    with SETTINGS_WRITE_LOCK:
+        settings = Settings(settings.root, deepcopy(settings.raw))
     if not settings.database_path.is_file():
         return {**_empty(reason="index_unavailable"), "anchor_visible": False, "hop_depth": 1}
     with _read(settings) as db:

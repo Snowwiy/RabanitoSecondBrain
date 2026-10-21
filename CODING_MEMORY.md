@@ -2,7 +2,19 @@
 
 Para experiencias de **entorno** aprobadas pero con evidencia parcial, consultar [Documented Memory](docs/DOCUMENTED_MEMORY.md) y usar `coding documented`. Ese modo mantiene atribución, límites y `fully_verified=false`; no cambia los requisitos ni resultados del modo verificado descrito abajo, no registra proyectos externos y no ejecuta reparaciones.
 
+El flujo separado `coding preview-documented` → revisión humana exacta →
+`coding save-documented --approve-digest ...` permite guardar esas experiencias
+en Windows nativo sin sobrescribir notas. El digest es una declaración del caller,
+no autenticación ni prueba histórica. La nota se conserva y admite reintento si
+falla su índice; no se promueve a `coding similar` ni se expone un escritor HTTP.
+
 Se reutiliza el almacén existente: `decision add` crea Markdown revisable bajo `knowledge/decisions/`; la indexación habitual lo incorpora a SQLite. No existe una segunda memoria ni entrenamiento de modelos. Las Skills conservan la revisión/aprobación humana antes de guardar conocimiento confirmado.
+
+La [publicación de decisiones](docs/DECISION_STORAGE.md) está protegida en Windows
+con raíces propias, exclusiones, HANDLEs contra sustitución y rename sin reemplazo.
+Límite por nota64KiB UTF-8 o política menor; otros sistemas fallan explícitamente
+al escribir. No cambia el Markdown ni convierte evidencia presente en historia
+independientemente verificada. Las consultas siguen siendo de solo lectura.
 
 ```powershell
 python -m rabanito coding similar "SQLite rollback conexión" --technology Python --limit 5 --max-chars 6000

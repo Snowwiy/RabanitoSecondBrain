@@ -3995,9 +3995,11 @@ aliases: ["Line\nBreak", "Quoted: \"Name\""]
             self.assertEqual(report["counts"]["documents_with_unclosed_sensitive_blocks"], 0)
             self.assertGreaterEqual(safe_file.call_count, 2)
             self.assertTrue(all(Path(call.args[0]) == settings.vault_root for call in safe_file.call_args_list))
-            untrusted_link = next(item for item in report["missing_link_review"] if item["source_title"] == "Outside")
-            self.assertEqual(untrusted_link["live_path_classification"], "not_checked_untrusted_source_root")
-            self.assertEqual(untrusted_link["live_path_candidates"], [])
+            # Unconfigured origins are now excluded before metadata projection,
+            # not merely prevented from opening files during link review.
+            self.assertFalse(any(item["source_title"] == "Outside" for item in report["missing_link_review"]))
+            self.assertEqual(report["counts"]["documents_active"], 1)
+            self.assertNotIn("Private Target", json.dumps(report, ensure_ascii=False))
             self.assertNotIn("not read by audit", json.dumps(report, ensure_ascii=False))
 
     def test_level_up_returns_bounded_summary_and_preserves_full_audit_report(self) -> None:

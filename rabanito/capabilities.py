@@ -5,12 +5,14 @@ import posixpath
 import re
 import unicodedata
 from collections import defaultdict
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from .config import Settings
+from .config import Settings, SETTINGS_WRITE_LOCK
+from .audit_inventory import COUNT_FIELDS, STATUSES, empty_inventory, inspect_source_inventory
 from .db import Database
 from .indexer import _existing_source_directory, _existing_source_file, _index_lock, _project_is_excluded
 from .visibility import project_visibility_sql, register_project_visibility
@@ -21,39 +23,13 @@ from .utils import (
 )
 
 
-def _write_report_pair(settings: Settings, stem: str, json_value: Any, markdown_text: str) -> tuple[Path, Path]:
+def _write_report_pair(settings: Settings, stem: str, json_value: Any, markdown_text: str, *, config_path: Path | None = None) -> tuple[Path, Path]:
+    from .report_storage import publish_report_pair
     directory = settings.knowledge_root / "quality-reports"
     if contains_reparse_component(directory):
         raise ValueError("La carpeta de informes no puede atravesar un enlace simbólico o reparse-point.")
-    try:
-        directory.resolve(strict=False).relative_to(settings.knowledge_root.resolve(strict=False))
-    except (OSError, ValueError) as exc:
-        raise ValueError("La carpeta de informes debe permanecer dentro de knowledge_root.") from exc
-    directory.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    for suffix in range(1000):
-        suffix_text = "" if suffix == 0 else f"-{suffix + 1:02d}"
-        basename = f"{stamp}-{stem}{suffix_text}"
-        json_path = directory / f"{basename}.json"
-        markdown_path = directory / f"{basename}.md"
-        created: list[Path] = []
-        try:
-            with json_path.open("x", encoding="utf-8", newline="\n") as json_handle:
-                created.append(json_path)
-                with markdown_path.open("x", encoding="utf-8", newline="\n") as markdown_handle:
-                    created.append(markdown_path)
-                    json.dump(json_value, json_handle, ensure_ascii=False, indent=2)
-                    json_handle.write("\n")
-                    markdown_handle.write(markdown_text)
-            return json_path, markdown_path
-        except FileExistsError:
-            for created_path in reversed(created):
-                created_path.unlink(missing_ok=True)
-        except Exception:
-            for created_path in reversed(created):
-                created_path.unlink(missing_ok=True)
-            raise
-    raise FileExistsError("No se encontró un nombre libre para guardar el par de informes sin sobrescribir archivos.")
+    return publish_report_pair(settings, stamp, stem, json_value, markdown_text, config_path=config_path)
 
 
 def _potential_contradictions(
@@ -564,9 +540,12 @@ def _review_missing_links(
 
 
 def _collect_audit_raw(settings: Settings) -> dict[str, Any]:
+    with SETTINGS_WRITE_LOCK:
+        settings = Settings(settings.root, deepcopy(settings.raw))
     now = datetime.now(timezone.utc)
     stale_before = now - timedelta(days=settings.stale_days)
-    with Database(settings.database_path) as db:
+    with Database(settings.database_path, query_only=True, empty_if_missing=True) as db:
+        db.execute('BEGIN')
         register_project_visibility(db, settings)
         visible_document = project_visibility_sql("d")
         visible_source = project_visibility_sql("source")
@@ -652,6 +631,7 @@ def _collect_audit_raw(settings: Settings) -> dict[str, Any]:
         index_drift_summary, index_drift_findings = _review_index_drift(db, settings)
         counts["documents_index_drift"] = int(index_drift_summary["documents_out_of_sync"])
         counts["documents_index_check_skipped"] = int(index_drift_summary["documents_skipped_by_budget"])
+        source_inventory = inspect_source_inventory(db, settings)
         stale = db.query(
             "SELECT d.document_id,d.title,d.source_kind,d.relative_path,d.mtime_iso FROM documents d "
             "WHERE d.status='active' AND d.mtime_iso < ? AND " + visible_document + " ORDER BY d.mtime_iso LIMIT 200",
@@ -724,6 +704,7 @@ def _collect_audit_raw(settings: Settings) -> dict[str, Any]:
         "project_manifest_warnings_truncated": len(project_manifest_warnings) > 200,
         "index_drift_summary": index_drift_summary,
         "index_drift_findings": index_drift_findings,
+        "source_inventory": source_inventory,
         "stale_documents": [dict(row) for row in stale], "duplicate_hashes": [dict(row) for row in duplicate_hashes],
         "duplicate_titles": [dict(row) for row in duplicate_titles], "potential_contradictions": contradictions,
         "latest_scan": dict(latest_scan) if latest_scan else None,
@@ -758,6 +739,27 @@ def _safe_audit_target(value: Any) -> str:
         basename = PurePosixPath(normalized).name
         return f"[ruta absoluta omitida]{' · ' + basename if basename else ''}"
     return normalized
+
+
+def _source_inventory_view(raw: Any) -> dict[str, Any]:
+    safe = empty_inventory()
+    if not isinstance(raw, dict):
+        return safe
+    for key in COUNT_FIELDS:
+        safe[key] = max(0, int(raw.get(key, 0)))
+    for key in ('performed', 'budget_exhausted', 'coverage_complete', 'findings_truncated'):
+        safe[key] = bool(raw.get(key, False))
+    if not safe['performed']:
+        safe['coverage_complete'] = False
+    from .audit_inventory import LIMITS
+    safe['limits'] = {key: raw['limits'][key] for key in LIMITS if key in raw.get('limits', {})}
+    safe['findings'] = [{
+        'source_kind': _safe_audit_display(item.get('source_kind', ''))[:40],
+        'relative_path': _safe_audit_relative_path(item.get('relative_path', ''))[:1024],
+        'status': item['status'], 'review_only': True,
+    } for item in raw.get('findings', [])[:500]
+        if isinstance(item, dict) and item.get('status') in STATUSES]
+    return safe
 
 
 def dashboard_audit_view(report: dict[str, Any]) -> dict[str, Any]:
@@ -818,6 +820,7 @@ def dashboard_audit_view(report: dict[str, Any]) -> dict[str, Any]:
     return {
         "generated_at": report["generated_at"],
         "quality_score": int(report["quality_score"]),
+        "source_inventory": _source_inventory_view(report.get('source_inventory')),
         "counts": {key: int(report["counts"].get(key, 0)) for key in count_keys},
         "link_classifications": [{
             "status": safe_display(item["status"]), "reason": safe_display(item["reason"]),
@@ -945,7 +948,7 @@ def collect_audit(settings: Settings) -> dict[str, Any]:
     return audit_report_view(_collect_audit_raw(settings))
 
 
-def write_audit(settings: Settings) -> dict[str, Any]:
+def write_audit(settings: Settings, *, config_path: Path | None = None) -> dict[str, Any]:
     report = collect_audit(settings)
     counts = report["counts"]
     lines = [
@@ -1010,6 +1013,20 @@ def write_audit(settings: Settings) -> dict[str, Any]:
             lines.append(f"- … {omitted} additional findings are available in the JSON report.")
         lines.append("")
     drift_summary = report["index_drift_summary"]
+    inventory = report['source_inventory']
+    lines.extend([
+        '## Source inventory (metadata only; no incorporation)', '',
+        f"Eligible files: {inventory['eligible_files']}; visible in index: {inventory['indexed_files']}; "
+        f"not visible/indexed: {inventory['unindexed_files']}. New project roots: {inventory['new_project_roots']}.",
+        f"Coverage complete: {inventory['coverage_complete']}; budget exhausted: {inventory['budget_exhausted']}; "
+        f"unverifiable project files: {inventory['unverifiable_project_files']}; "
+        f"findings truncated: {inventory['findings_truncated']}.",
+        'This census does not read new note bodies or update the index. Filesystem coverage is not content freshness.', '',
+    ])
+    for item in inventory['findings']:
+        relative = item['relative_path'].replace('`', "'").replace('<', '&lt;').replace('>', '&gt;')
+        lines.append(f"- `{item['source_kind']}:{relative}` — {item['status']} (review only)")
+    lines.append('')
     lines.extend([
         "## Read-only source/index consistency",
         "",
@@ -1046,7 +1063,7 @@ def write_audit(settings: Settings) -> dict[str, Any]:
                     f"{item['suppressed_line_count']} lines censored; review the source manually."
                 )
         lines.append("")
-    json_path, markdown_path = _write_report_pair(settings, "audit", report, "\n".join(lines))
+    json_path, markdown_path = _write_report_pair(settings, "audit", report, "\n".join(lines), config_path=config_path)
     report["json_path"] = json_path.relative_to(settings.knowledge_root).as_posix()
     report["markdown_path"] = markdown_path.relative_to(settings.knowledge_root).as_posix()
     return report
@@ -1123,7 +1140,7 @@ def _build_link_suggestions_locked(settings: Settings, limit_per_document: int) 
     return {"created": created, "considered": considered, "status": "suggestions only; no facts asserted"}
 
 
-def level_up(settings: Settings) -> dict[str, Any]:
+def level_up(settings: Settings, *, config_path: Path | None = None) -> dict[str, Any]:
     report = collect_audit(settings)
     recommendations: list[dict[str, Any]] = []
     counts = report["counts"]
@@ -1157,6 +1174,34 @@ def level_up(settings: Settings) -> dict[str, Any]:
             "why": f"{counts['documents_index_check_skipped']} documentos quedaron fuera de los límites configurados; ampliar audit_index_check_max_bytes o audit_index_check_max_documents solo si es necesario.",
             "command": "python -m rabanito audit",
         })
+    inventory = report.get('source_inventory', {})
+    if inventory.get('unindexed_files', 0):
+        recommendations.append({
+            'priority': 'medium', 'action': 'Revisar archivos pendientes de indexar',
+            'why': f"Se observaron {inventory['unindexed_files']} archivos elegibles sin una fila activa y visible. "
+                   'Son candidatos: revisar contenido y políticas antes de una sincronización explícita.',
+            'command': 'python -m rabanito audit',
+        })
+    if inventory.get('new_project_roots', 0) or inventory.get('inactive_project_roots', 0):
+        recommendations.append({
+            'priority': 'medium', 'action': 'Revisar proyectos detectados',
+            'why': f"Raíces observadas: {inventory.get('new_project_roots', 0)} sin registro y "
+                   f"{inventory.get('inactive_project_roots', 0)} con registro no activo. "
+                   'El inventario no las incorpora ni modifica su estado.',
+            'command': 'python -m rabanito audit',
+        })
+    if inventory and not inventory.get('coverage_complete', False):
+        recommendations.append({
+            'priority': 'medium', 'action': 'Revisar cobertura del inventario',
+            'why': 'La cobertura del inventario es parcial. ' +
+                   f"Memorias sin asociación verificable: {inventory.get('unverifiable_project_files', 0)}; " +
+                   f"raíces no disponibles: {inventory.get('roots_unavailable', 0)}; " +
+                   f"errores de directorio: {inventory.get('directory_errors', 0)}; " +
+                   f"presupuesto agotado: {bool(inventory.get('budget_exhausted', False))}. " +
+                   'Las omisiones no prueban pérdida de documentos. Revisar fuentes, límites y asociaciones; '
+                   'no forzar indexación para obtener un dictamen limpio.',
+            'command': 'python -m rabanito audit',
+        })
     if not report["contradiction_scan_summary"]["coverage_complete"]:
         summary = report["contradiction_scan_summary"]
         skipped = (
@@ -1188,7 +1233,7 @@ def level_up(settings: Settings) -> dict[str, Any]:
         "recommendations": recommendations,
     }
     lines = [f"# Rabanito level-up — {generated_at}", "", *(f"- **{item['priority']}** {item['action']}: {item['why']} (`{item['command']}`)" for item in recommendations), ""]
-    json_path, markdown_path = _write_report_pair(settings, "level-up", full_output, "\n".join(lines))
+    json_path, markdown_path = _write_report_pair(settings, "level-up", full_output, "\n".join(lines), config_path=config_path)
     return {
         "generated_at": generated_at,
         "based_on": {

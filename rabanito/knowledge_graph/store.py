@@ -11,6 +11,7 @@ from ..config import Settings
 from ..db import Database
 from ..utils import contains_reparse_component, iso_now, path_key, safe_relative
 from ..indexer import DEFAULT_EXCLUDED_DIRS, _excluded_directory, _excluded_name
+from ..source_policy import document_eligibility
 
 
 ENGINE_VERSION = 4
@@ -184,7 +185,10 @@ def configure(db: Database, settings: Settings) -> dict[int, dict]:
     by_root = {path_key(p["root_path"]): pid for pid, p in projects.items()}
     roots = {(kind, path_key(root)) for kind, root, _ in settings.source_roots() if kind != "projects"}
     policies = {}
+    eligible = document_eligibility(settings)
     def path_visible(kind, value):
+        # Dependency snapshots/reviews may cite approved lockfiles or SBOMs
+        # that are deliberately NOT eligible for document-body indexing.
         if not isinstance(value, str) or not value or "\\" in value or ":" in value or value.startswith("/") or any(p in {"", ".", ".."} for p in value.split("/")):
             return 0
         if kind not in policies:
@@ -208,6 +212,8 @@ def configure(db: Database, settings: Settings) -> dict[int, dict]:
     db.connection.create_function("kg_pvisible", 1, lambda pid: int(pid in projects), deterministic=True)
     db.connection.create_function("kg_dvisible", 4, doc_visible, deterministic=True)
     db.connection.create_function("kg_path_visible", 2, path_visible, deterministic=True)
+    db.connection.create_function("kg_document_path_visible", 2,
+                                  lambda kind, value: int(bool(eligible(kind, value)) and bool(path_visible(kind, value))), deterministic=True)
     db.connection.create_function("kg_fold", 1, lambda value: str(value or "").casefold(), deterministic=True)
     return projects
 
@@ -215,7 +221,7 @@ def configure(db: Database, settings: Settings) -> dict[int, dict]:
 def descriptors(db: Database) -> str:
     """Metadata fingerprints only; normalized bodies are loaded per changed input."""
     tables = {r[0] for r in db.query("SELECT name FROM sqlite_master WHERE type='table'")}
-    docs = "SELECT * FROM documents WHERE status='active' AND kg_dvisible(source_kind,source_root,project_root_path,project_name)=1 AND kg_path_visible(source_kind,relative_path)=1"
+    docs = "SELECT * FROM documents WHERE status='active' AND kg_dvisible(source_kind,source_root,project_root_path,project_name)=1 AND kg_document_path_visible(source_kind,relative_path)=1"
     # Reviewed evidence resolves indexed paths to document IDs. A path-map
     # change can affect that relationship even if the memory text is unchanged.
     document_map = "(SELECT fp FROM M)"
@@ -311,4 +317,6 @@ def source_version(db: Database, settings: Settings, *, include_file: bool = Fal
                 version.append((file.suffix, stat.st_size, stat.st_mtime_ns))
     version.append((str(settings.vault_root), str(settings.projects_root), str(settings.knowledge_root),
                     settings.raw.get("excluded_projects", []), settings.raw.get("additional_sources", []), settings.raw.get("source_policy", {})))
+    if settings.raw.get('excluded_memory_contexts'):
+        version.append(('excluded_memory_contexts', settings.raw['excluded_memory_contexts']))
     return fingerprint(version)

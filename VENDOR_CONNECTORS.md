@@ -1,6 +1,6 @@
 # Avisos de fabricantes — evaluación acotada2026-10-16
 
-Los cuatro conectores funcionales actuales son CISA KEV, NVD, FIRST EPSS y OSV. Esta evaluación no instala módulos ni añade secretos/credenciales, y no equivale a una prueba de sincronización de los proveedores adicionales.
+Los cinco conectores funcionales actuales son CISA KEV, NVD, FIRST EPSS, OSV y MSRC (por mes explícito). Esta evaluación no instala módulos ni añade secretos/credenciales. Las referencias de proveedores opcionales no equivalen a conectores probados; las fechas y coberturas operativas se consultan con `cyber status`.
 
 | Fuente | Evidencia oficial consultada | Estado en Rabanito |
 |---|---|---|

@@ -49,6 +49,24 @@ Para CVE, EPSS o Zero Trust/estándares, lee `<SECOND_BRAIN_ROOT>\integrations\C
 8. Para encontrar una nota específica, usa `python -m rabanito search "términos" --project "<ruta del proyecto>"`; añade `--tag "<etiqueta exacta>"` si necesitas restringirla por tag. Para decisiones, usa `python -m rabanito decision list --project "<ruta exacta del proyecto>"` y después recupera el documento con `python -m rabanito doc <id>`. La ruta exacta también incluye la ficha de proyecto en `context`, `search` y el grafo; conserva el campo `project_root` devuelto.
 9. Para navegar conexiones usa `python -m rabanito related <document_id>` con un id devuelto por búsqueda. Para inventario de proyectos usa `python -m rabanito projects --json`.
 
+## Experiencias documentadas de entorno
+
+Para relatos aprobados con evidencia histórica parcial, lee
+`<SECOND_BRAIN_ROOT>\docs\DOCUMENTED_MEMORY.md`. No requieren proyecto activo
+ni registrar un repositorio: consulta
+`python -m rabanito coding documented "problema o tecnología" --limit 3 --max-chars 2000`
+desde el checkout, conservando
+citas, atribución y límites; no presentarlos como soluciones verificadas.
+
+Para registrar uno, usa `coding preview-documented --stdin --reviewed-on` y
+muestra el Markdown exacto. Solo tras aprobación humana de ese texto usa el
+comando separado `coding save-documented` con el mismo JSON/fecha y
+`--approve-digest` aprobado. Calcular un digest NO acredita consentimiento;
+no autoaprobar ni usar `decision add --status confirmed` para promover el relato.
+Si devuelve exit2/index_pending, la nota ya está guardada: no borrarla ni crear
+otra; revisar el error y reintentar el mismo candidato aprobado. No hay escritor
+HTTP ni instalación de Skills implícita. El preflight del intérprete sigue vigente.
+
 ## Registrar una decisión o experiencia de programación revisada
 
 1. Redacta una propuesta breve que separe proyecto, clasificación, problema/causa documentada, solución, motivo, tecnologías, componentes, pruebas y evidencias.

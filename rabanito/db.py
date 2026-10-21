@@ -176,13 +176,51 @@ CREATE TABLE IF NOT EXISTS approved_interviews (
 
 
 class Database:
-    def __init__(self, path: Path, *, read_only: bool = False):
+    def __init__(self, path: Path, *, read_only: bool = False, initialize: bool = True,
+                 empty_if_missing: bool = False, query_only: bool = False):
         self.path = path
-        if read_only:
-            self.connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=30)
-            self.connection.row_factory = sqlite3.Row
-            self.connection.execute("PRAGMA foreign_keys=ON")
-            self.connection.execute("PRAGMA busy_timeout=30000")
+        if type(query_only) is not bool:
+            raise ValueError('query_only must be boolean')
+        if type(empty_if_missing) is not bool or (empty_if_missing and not (read_only or query_only)):
+            raise ValueError('empty_if_missing requires a read-only or query-only view')
+        if query_only or empty_if_missing:
+            from .utils import contains_reparse_component
+            if contains_reparse_component(path):
+                raise sqlite3.OperationalError('Unsafe read-only index path')
+        if empty_if_missing:
+            # Documentary queries historically returned an empty result before
+            # first indexing. Preserve that output using RAM, never by creating
+            # or migrating the configured persistent index from a read call.
+            try:
+                path.lstat()
+            except FileNotFoundError:
+                self.connection = sqlite3.connect(':memory:', timeout=30)
+                try:
+                    self.connection.row_factory = sqlite3.Row
+                    self.connection.execute('PRAGMA busy_timeout=30000')
+                    self.connection.executescript(SCHEMA)
+                    self.connection.execute('PRAGMA query_only=ON')
+                except BaseException:
+                    self.connection.close()
+                    raise
+                return
+        if read_only or query_only or not initialize:
+            # Scoped writers may require an existing schema without implicitly
+            # running DDL/backfills on unrelated documents. mode=rw never creates.
+            mode = 'ro' if read_only else 'rw'
+            self.connection = sqlite3.connect(path.resolve().as_uri() + '?mode=' + mode, uri=True, timeout=30)
+            try:
+                self.connection.row_factory = sqlite3.Row
+                self.connection.execute("PRAGMA foreign_keys=ON")
+                self.connection.execute("PRAGMA busy_timeout=30000")
+                if query_only:
+                    # Block SQL writes without disabling SQLite's own safe WAL
+                    # coordination/last-close cleanup on this writable local index.
+                    # Strict mode=ro remains unchanged for other existing readers.
+                    self.connection.execute('PRAGMA query_only=ON')
+            except BaseException:
+                self.connection.close()
+                raise
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.connection = sqlite3.connect(str(path), timeout=30)

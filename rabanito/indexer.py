@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Iterator
 from urllib.parse import unquote, urlsplit
 
-from .config import Settings, set_additional_source_enabled
+from .config import SETTINGS_WRITE_LOCK, Settings, set_additional_source_enabled
 from .db import Database
 from .parsing import ParsedDocument, parse_frontmatter, parse_markdown
 from .utils import contains_reparse_component, iso_now, path_key, redact_sensitive_lines, safe_relative, sha256_text, slugify, write_json_atomic, write_text_atomic
@@ -203,6 +203,15 @@ def _excluded_directory(name: str, excluded_dirs: set[str]) -> bool:
 
 @contextmanager
 def _index_lock(settings: Settings):
+    from .index_storage import data_lock_scope, check_lock_binding
+    with data_lock_scope(settings) as locked:
+        with _raw_index_lock(locked), SETTINGS_WRITE_LOCK:
+            check_lock_binding(settings,locked)
+            yield
+
+
+@contextmanager
+def _raw_index_lock(settings: Settings):
     """Serialize index and derived-link writes across CLI/dashboard processes."""
     timeout = float(settings.raw.get("index_lock_timeout_seconds", 30))
     if not _PROCESS_INDEX_LOCK.acquire(timeout=max(0.0, timeout)):
@@ -1066,7 +1075,25 @@ def _project_document_validation_procedures(
     return procedures
 
 
-def discover_projects(
+def discover_projects(settings: Settings, db: Database, now: str | None = None,
+                      scan_state: dict[str, set[str]] | None = None) -> list[dict[str, Any]]:
+    from .index_storage import active_scope, index_scope
+    if path_key(db.path) != path_key(settings.database_path):
+        raise ValueError('project_inventory_database_mismatch')
+    if active_scope() is not None:
+        return _discover_projects_impl(settings,db,now,scan_state)
+    with _index_lock(settings), index_scope(settings) as scope:
+        return _discover_projects_impl(scope.settings,db,now,scan_state)
+
+
+def project_inventory(settings: Settings) -> list[dict[str, Any]]:
+    from .index_storage import index_scope
+    with _index_lock(settings), index_scope(settings) as scope:
+        with scope.database(Database) as db:
+            return discover_projects(scope.settings,db)
+
+
+def _discover_projects_impl(
     settings: Settings,
     db: Database,
     now: str | None = None,
@@ -1218,11 +1245,15 @@ def discover_projects(
         validation_procedures = _project_document_validation_procedures(
             project_root, docs, int(policy.get("max_metadata_file_bytes", 2_097_152)),
         )
-        _write_project_memory(
-            memory_path, project_root, technologies, structure, docs, now, overview, outline,
-            dependencies, dependencies_truncated, dependency_errors, evidence=evidence,
-            validation_procedures=validation_procedures,
-        )
+        from .index_storage import current_scope
+        if current_scope().knowledge_available:
+            _write_project_memory(
+                memory_path, project_root, technologies, structure, docs, now, overview, outline,
+                dependencies, dependencies_truncated, dependency_errors, evidence=evidence,
+                validation_procedures=validation_procedures,
+            )
+        elif scan_state is not None:
+            scan_state['failed_kinds'].add('internal')
         discovered.append({
             "project_id": project_id, "name": project_root.name, "root": str(project_root),
             "technologies": technologies, "structure": structure, "documentation": docs,
@@ -1240,13 +1271,14 @@ def discover_projects(
 
 
 def _project_memory_path(settings: Settings, project_root: Path) -> Path:
+    from .index_storage import check_profile, read_profile
     projects_dir = settings.knowledge_root / "projects"
     slug = slugify(project_root.name)
     root_key = path_key(project_root)
 
     def belongs_to_project(path: Path) -> bool:
         try:
-            content = path.read_text(encoding="utf-8", errors="replace")
+            content = read_profile(settings,path).decode('utf-8')
         except OSError:
             return False
         routes = []
@@ -1256,20 +1288,24 @@ def _project_memory_path(settings: Settings, project_root: Path) -> Path:
         return bool(routes) and all(route == root_key for route in routes)
 
     ordinary = projects_dir / slug / "PROJECT_MEMORY.md"
+    check_profile(settings,ordinary)
     if not ordinary.exists() or belongs_to_project(ordinary):
         return ordinary
 
     path_digest = sha256_text(root_key)
     for length in (8, 12, 16, 24, 32, 64):
         candidate = projects_dir / f"{slug}-{path_digest[:length]}" / "PROJECT_MEMORY.md"
+        check_profile(settings,candidate)
         if not candidate.exists() or belongs_to_project(candidate):
             return candidate
     suffix = 2
-    while True:
+    while suffix < 1002:
         candidate = projects_dir / f"{slug}-{path_digest}-{suffix}" / "PROJECT_MEMORY.md"
+        check_profile(settings,candidate)
         if not candidate.exists() or belongs_to_project(candidate):
             return candidate
         suffix += 1
+    raise FileExistsError('project_profile_filename_limit_reached')
 
 
 def _legacy_project_profile_prefix(text: str, project_name: str, observed_at: str | None = None) -> str | None:
@@ -1377,7 +1413,9 @@ def _write_project_memory(
     evidence: list[dict[str, Any]] | None = None,
     validation_procedures: list[dict[str, Any]] | None = None,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    from .index_storage import current_scope
+    storage = current_scope()
+    storage.profile_parent(path)
     limited_docs = docs[:200]
     start_marker = "<!-- RABANITO:GENERATED:START -->"
     end_marker = "<!-- RABANITO:GENERATED:END -->"
@@ -1477,7 +1515,7 @@ def _write_project_memory(
         f"observed_at: {observed_at}", "source_type: derived-metadata", "---", "",
     ])
     if path.exists():
-        existing = path.read_text(encoding="utf-8", errors="replace")
+        existing = storage.profile_text(path)
         start = existing.find(start_marker)
         end = existing.find(end_marker, start + len(start_marker)) if start >= 0 else -1
         if start >= 0 and end >= 0:
@@ -1507,7 +1545,7 @@ def _write_project_memory(
             )
     else:
         updated = frontmatter + generated_body
-    write_text_atomic(path, updated)
+    storage.write_profile(path,updated)
 
 
 def iter_source_files(
@@ -1611,9 +1649,9 @@ def _upsert_document(db: Database, source: SourceFile, parsed: ParsedDocument, n
             fields + (document_id,),
         )
         db.execute("DELETE FROM documents_fts WHERE document_id=?", (str(document_id),))
-        old_chunks = db.query("SELECT chunk_id FROM document_chunks WHERE document_id=?", (document_id,))
-        for row in old_chunks:
-            db.execute("DELETE FROM chunks_fts WHERE chunk_id=?", (str(row["chunk_id"]),))
+        # The FTS cache may contain orphan rows after a damaged/imported index.
+        # Purge only this document's payload, including those without a chunk row.
+        db.execute("DELETE FROM chunks_fts WHERE document_id=?", (str(document_id),))
         db.execute("DELETE FROM document_chunks WHERE document_id=?", (document_id,))
         db.execute("DELETE FROM tags WHERE document_id=?", (document_id,))
         db.execute("DELETE FROM links WHERE source_document_id=?", (document_id,))
@@ -1706,7 +1744,7 @@ def _record_document_change(
     )
 
 
-def _resolve_links(db: Database) -> None:
+def _resolve_links(db: Database, *, source_document_id: int | None = None) -> None:
     documents = db.query("SELECT * FROM documents WHERE status='active'")
     by_rel: dict[tuple[str, str], list[Any]] = {}
     by_path_suffix: dict[tuple[str, tuple[str, ...]], list[Any]] = {}
@@ -1732,7 +1770,9 @@ def _resolve_links(db: Database) -> None:
             aliases = [aliases]
         for alias in aliases:
             by_alias.setdefault((root_key, str(alias).casefold()), []).append(doc)
-    for link in db.query("SELECT * FROM links"):
+    link_rows = (db.query("SELECT * FROM links") if source_document_id is None else
+                 db.query("SELECT * FROM links WHERE source_document_id=?", (source_document_id,)))
+    for link in link_rows:
         source = db.one("SELECT * FROM documents WHERE document_id=?", (link["source_document_id"],))
         if not source or source["status"] != "active":
             continue
@@ -1822,6 +1862,12 @@ def _resolve_links(db: Database) -> None:
 
 
 def _index_all_locked(settings: Settings, force: bool = False) -> dict[str, Any]:
+    from .index_storage import index_scope
+    with index_scope(settings) as scope:
+        return _index_all_impl(scope.settings,force=force)
+
+
+def _index_all_impl(settings: Settings, force: bool = False) -> dict[str, Any]:
     # Scan markers need sub-second uniqueness so rapid successive CLI calls can
     # still detect a deletion reliably.
     started = datetime.now(timezone.utc).isoformat(timespec="microseconds")
@@ -1830,7 +1876,9 @@ def _index_all_locked(settings: Settings, force: bool = False) -> dict[str, Any]
         "started_at": started, "status": "running", "files_seen": 0, "added": 0, "modified": 0,
         "unchanged": 0, "removed": 0, "skipped": 0, "errors": 0, "source_summary": {},
     }
-    with Database(settings.database_path) as db:
+    from .index_storage import current_scope
+    storage = current_scope()
+    with storage.database(Database) as db:
         parser_version = db.one("SELECT value FROM meta WHERE key='parser_version'")
         reparse_for_parser_update = not parser_version or str(parser_version["value"]) != str(PARSER_VERSION)
         effective_force = force or reparse_for_parser_update
@@ -1982,7 +2030,7 @@ def _index_all_locked(settings: Settings, force: bool = False) -> dict[str, Any]
         db.commit()
     history_dir = settings.knowledge_root / "history" / "index-runs"
     history_name = datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".json"
-    write_json_atomic(history_dir / history_name, stats)
+    storage.history(history_dir/history_name,stats)
     return stats
 
 

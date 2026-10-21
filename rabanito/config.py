@@ -109,13 +109,18 @@ def load_settings(path: Path | None = None) -> Settings:
     config_path = path or default_config_path()
     config_path = config_path.resolve()
     raw = json.loads(config_path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or (raw.get('project_root') is not None and not isinstance(raw['project_root'], str)):
+        raise ValueError('invalid_settings_object')
     project_root = Path(raw.get("project_root") or config_path.parent.parent)
     if not project_root.is_absolute():
         project_root = (config_path.parent.parent / project_root).resolve()
     raw["project_root"] = str(project_root)
     settings = Settings(project_root, raw)
-    settings.data_dir.mkdir(parents=True, exist_ok=True)
-    settings.knowledge_root.mkdir(parents=True, exist_ok=True)
+    # Startup precedes every CLI writer. Validate BOTH roots before creating
+    # either, then pin parents against Windows directory redirection. No DB/lock
+    # is opened here; command-specific guards remain authoritative for those.
+    from .index_storage import prepare_settings_storage
+    prepare_settings_storage(settings)
     return settings
 
 

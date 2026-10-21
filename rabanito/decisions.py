@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -7,10 +8,10 @@ from typing import Any
 
 from .config import Settings
 from .db import Database
-from .indexer import _index_lock
+from .decision_storage import memory_write_scope, publish_note, validate_memory_storage, validate_memory_target
 from .utils import (
     contains_reparse_component, path_key, redact_sensitive_lines, safe_relative,
-    sha256_text, slugify, write_text_atomic,
+    sha256_text, slugify,
 )
 from .visibility import register_project_visibility
 
@@ -36,7 +37,9 @@ def _list_value(values: list[str] | None) -> list[str]:
 
 
 def _project_row(settings: Settings, identifier: str):
-    with Database(settings.database_path) as db:
+    if not settings.database_path.is_file():
+        raise ValueError("Proyecto no encontrado en el índice; ejecuta 'python -m rabanito index' primero.")
+    with Database(settings.database_path, read_only=True) as db:
         rows = db.query("SELECT * FROM projects WHERE status='active' ORDER BY name")
     matches = [row for row in rows if not settings.is_project_excluded(str(row["root_path"]))
                and (row["name"].casefold() == identifier.casefold()
@@ -107,8 +110,10 @@ def add_memory_record(
     result: str = "",
     validation: str = "pending",
     recorded_date: str | None = None,
+    config_path: Path | None = None,
 ) -> dict[str, Any]:
     """Write a traceable record only from caller-supplied facts and validated local references."""
+    settings = Settings(settings.root, copy.deepcopy(settings.raw))
     if record_type not in RECORD_TYPES:
         raise ValueError(f"record_type debe ser uno de: {', '.join(sorted(RECORD_TYPES))}")
     if status not in STATUSES:
@@ -128,7 +133,9 @@ def add_memory_record(
     except ValueError as exc:
         raise ValueError("La fecha debe usar el formato YYYY-MM-DD.") from exc
 
-    project_row = _project_row(settings, project)
+    validate_memory_storage(settings)
+    with memory_write_scope(settings, config_path):
+        project_row = _project_row(settings, project)
     project_root = Path(project_row["root_path"])
     evidence_rows = [_resolve_evidence(settings, project_root, item) for item in _list_value(evidence)]
     evidence_refs = _safe_evidence_refs(settings, project_root, [str(path) for path, _ in evidence_rows])
@@ -184,8 +191,11 @@ def add_memory_record(
         )
     folder = slugify(project_row["name"]) + "-" + sha256_text(path_key(project_root))[:8]
     directory = settings.knowledge_root / "decisions" / folder
-    with _index_lock(settings):
-        directory.mkdir(parents=True, exist_ok=True)
+    with memory_write_scope(settings, config_path) as tree:
+        current = _project_row(settings, project)
+        if (path_key(current['root_path']) != path_key(project_root)
+                or current['name'] != project_row['name']):
+            raise ValueError('decision_project_changed_reload_required')
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         filename = f"{stamp}-{slugify(statement)[:48]}.md"
         path = directory / filename
@@ -193,7 +203,10 @@ def add_memory_record(
         while path.exists():
             path = directory / f"{stamp}-{slugify(statement)[:44]}-{suffix}.md"
             suffix += 1
-        write_text_atomic(path, record_text)
+        body = record_text.encode('utf-8')
+        validate_memory_target(settings, path, body)
+        tree.directory(directory, create=True)
+        publish_note(path, body)
     return {
         "path": str(path), "project": project_row["name"], "project_root": str(project_root),
         "record_type": record_type, "status": status, "recorded_date": effective_date,
@@ -261,8 +274,9 @@ def list_memory_records(
             )
             params.extend([project.casefold(), project.casefold()])
     where.append(
-        f"rabanito_project_visible(d.source_kind,{visibility_project},{visibility_root})=1"
+        f"rabanito_project_visible(d.source_kind,{visibility_project},{visibility_root},d.source_root)=1"
     )
+    where.append('rabanito_document_eligible(d.source_kind,d.relative_path)=1')
     if record_type:
         where.append(f"rabanito_casefold({fm_type})=?")
         params.append(record_type.casefold())
@@ -270,7 +284,7 @@ def list_memory_records(
         where.append(f"rabanito_casefold({fm_status})=?")
         params.append(status.casefold())
 
-    with Database(settings.database_path) as db:
+    with Database(settings.database_path, query_only=True, empty_if_missing=True) as db:
         register_project_visibility(db, settings)
         db.connection.create_function(
             "rabanito_casefold", 1, lambda value: str(value or "").casefold(), deterministic=True,

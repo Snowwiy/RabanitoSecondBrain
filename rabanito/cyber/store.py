@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sqlite3
 from datetime import datetime, timezone
 
 from ..config import Settings
@@ -81,10 +82,21 @@ def cache_for(db: Database, url: str) -> dict | None:
     return None
 
 
+def _clear_entity_fts(db: Database, entity_ids: list[str]) -> None:
+    # vulnerability_id is UNINDEXED in FTS5. One DELETE per entity scans the
+    # entire virtual table repeatedly; bounded IN batches scan it once per batch.
+    # Respect the connection's actual parameter budget (Python >= 3.11).
+    batch_size = max(1, min(500, db.connection.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER)))
+    for offset in range(0, len(entity_ids), batch_size):
+        batch = entity_ids[offset:offset + batch_size]
+        placeholders = ",".join("?" for _ in batch)
+        db.execute("DELETE FROM cyber_fts WHERE vulnerability_id IN (" + placeholders + ")", batch)
+
+
 def _merge_entity(db: Database, entity_id: str) -> None:
+    """Rebuild one entity after the caller clears FTS for the publication batch."""
     rows = db.query("SELECT r.source,r.source_id,r.data_json,r.retrieved_at FROM cyber_records r JOIN cyber_aliases a "
                     "USING(source,source_id) WHERE a.vulnerability_id=? AND r.active=1", (entity_id,))
-    db.execute("DELETE FROM cyber_fts WHERE vulnerability_id=?", (entity_id,))
     if not rows:
         db.execute("DELETE FROM cyber_entities WHERE vulnerability_id=?", (entity_id,))
         return
@@ -184,7 +196,9 @@ def apply_records(db: Database, source: str, records: list[dict], responses: lis
                    (response.url, response.etag, response.last_modified, json.dumps(response.data, ensure_ascii=False), response.fetched_at or now))
     # Bound cache size. Eviction costs bandwidth only; records/watermarks remain canonical.
     db.execute("DELETE FROM cyber_http_cache WHERE url NOT IN (SELECT url FROM cyber_http_cache ORDER BY retrieved_at DESC,url LIMIT 100)")
-    for entity_id in sorted(touched):
+    entity_ids = sorted(touched)
+    _clear_entity_fts(db, entity_ids)
+    for entity_id in entity_ids:
         _merge_entity(db, entity_id)
     return counts
 
@@ -305,6 +319,9 @@ def cyber_status(settings: Settings) -> dict:
 
 
 def vulnerability_context(settings: Settings, query: str, *, max_chars: int = 6000, limit: int = 5, **filters) -> dict:
+    source = filters.get('source')
+    if source is not None and source not in SOURCES:
+        raise ValueError('Unknown source')
     budget = min(max(int(max_chars), 0), 100_000)
     if not budget:
         return {"fragments": [], "used_chars": 0, "max_chars": 0}
@@ -316,6 +333,11 @@ def vulnerability_context(settings: Settings, query: str, *, max_chars: int = 60
             continue
         observations = record.get("observations", [])
         for observation in observations:
+            # The search predicate selects entities having this provider; it
+            # does not filter their merged observations. Apply that selection
+            # before spending the caller's context budget or emitting a citation.
+            if source is not None and observation['source'] != source:
+                continue
             content = observation["description"] or observation["title"]
             if not content or used >= budget:
                 continue

@@ -72,6 +72,11 @@ Cada nodo/arista conserva cita. Para fuentes privadas son relativas (`obsidian:.
 
 ## Consistencia y rendimiento
 
+La [validación del snapshot](GRAPH_SNAPSHOT.md) se reutiliza dentro de una lectura
+solo después de comprobar globalmente que no hay inputs sucios u obsoletos.
+No relaja permisos, esquemas, presupuestos o validación entre peticiones; evita
+recalcular la misma unión al construir páginas y vecinos de un índice limpio.
+
 `kg_inputs` guarda huellas de metadatos y relaciones derivadas por origen. Entradas modificadas se reemplazan de forma transaccional; ausentes/inadmisibles se retiran solo al completar el recorrido. Lecturas ocultan claims obsoletos o excluidos antes de la próxima sincronización. Cambiar el motor exige incrementar `ENGINE_VERSION`; las identidades siguen estables. DDL aplicada y checksum son inmutables: cambios posteriores requieren otra migración.
 
 El esquema instala triggers propios `kg_watch_*` que solo incrementan `kg_epoch` dentro de las transacciones de tablas fuente locales. No modifica sus filas ni archivos canónicos. Cada lectura verifica cobertura y definición de los triggers y los esquemas de origen. Una huella completa limpia permite memoizar **solo su digest**, máximo16, sin conexiones persistentes ni texto privado. Epoch, configuración/permisos, generación o archivos DB cambiados invalidan la prueba; rollback revierte el contador. Si falta un trigger o aparece otro dominio, se usa verificación completa y se informa `requires_sync`. Sync repone triggers ausentes; uno alterado se rechaza, no se sobrescribe silenciosamente. No es protección forense contra un administrador que manipule arbitrariamente toda la DB.

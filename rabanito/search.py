@@ -244,7 +244,7 @@ def search_documents(settings: Settings, query: str, limit: int | None = None, s
         terms_by_key.setdefault(token.casefold(), token)
     terms = tuple(terms_by_key.values())
     term_count = len(terms)
-    with Database(settings.database_path) as db:
+    with Database(settings.database_path, query_only=True, empty_if_missing=True) as db:
         register_project_visibility(db, settings)
         _add_project_filter(settings, db, filters, filter_params, project)
         rows = query_rows(db, fts_query(query), candidate_limit)
@@ -295,7 +295,7 @@ def recent_documents(settings: Settings, limit: int = 20, source_kind: str | Non
         where.append("category LIKE ?")
         params.append(category + "%")
     _add_tag_filter(where, params, tag)
-    with Database(settings.database_path) as db:
+    with Database(settings.database_path, query_only=True, empty_if_missing=True) as db:
         register_project_visibility(db, settings)
         _add_project_filter(settings, db, where, params, project)
         params.append(limit)
@@ -318,7 +318,7 @@ def retrieve_context(settings: Settings, query: str, limit: int | None = None, m
         where.append("d.category LIKE ?")
         params.append(category + "%")
     _add_tag_filter(where, params, tag)
-    with Database(settings.database_path) as db:
+    with Database(settings.database_path, query_only=True, empty_if_missing=True) as db:
         register_project_visibility(db, settings)
         _add_project_filter(settings, db, where, params, project)
         # Retrieve a bounded candidate pool so query-term coverage can be
@@ -366,7 +366,7 @@ def retrieve_context(settings: Settings, query: str, limit: int | None = None, m
 
 
 def get_document(settings: Settings, document_id: int) -> dict[str, Any] | None:
-    with Database(settings.database_path) as db:
+    with Database(settings.database_path, query_only=True, empty_if_missing=True) as db:
         register_project_visibility(db, settings)
         row = db.one(
             "SELECT d.* FROM documents d WHERE d.document_id=? AND d.status='active' AND " + project_visibility_sql("d"),
@@ -397,7 +397,7 @@ def related_documents(settings: Settings, document_id: int, limit: int = 20) -> 
     limit = min(max(int(limit), 0), 100)
     if limit == 0:
         return []
-    with Database(settings.database_path) as db:
+    with Database(settings.database_path, query_only=True, empty_if_missing=True) as db:
         register_project_visibility(db, settings)
         source = db.one(
             "SELECT document_id FROM documents d WHERE d.document_id=? AND d.status='active' AND " + project_visibility_sql("d"),
@@ -436,7 +436,7 @@ def related_documents(settings: Settings, document_id: int, limit: int = 20) -> 
 
 
 def stats(settings: Settings, latest_scan_source_summary_limit: int | None = None) -> dict[str, Any]:
-    with Database(settings.database_path) as db:
+    with Database(settings.database_path, query_only=True, empty_if_missing=True) as db:
         register_project_visibility(db, settings)
         visible_document = project_visibility_sql("d")
         visible_source = project_visibility_sql("source")

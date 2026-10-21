@@ -15,6 +15,14 @@ Las Skills usan `<SECOND_BRAIN_ROOT>` y `<ACTIVE_PROJECT_ROOT>`, no rutas person
 
 No ejecutar contra perfiles globales durante el desarrollo. El operador debe resolver el directorio real de Skills de su cliente/perfil y autorizar esa escritura. Desde el checkout, con una raíz existente y explícita:
 
+En Hermes, el nombre visible no es necesariamente el ID o nombre de carpeta.
+Un perfil raíz puede mostrar un nombre personalizado y seguir siendo `default`;
+no construir `profiles/<nombre visible>` por conjetura. La presencia de un home
+en disco tampoco acredita el perfil de la sesión activa. Desktop distingue la
+preferencia del próximo arranque del perfil que lanzó su backend, y puede usar
+otra conexión. Confirmar home/backend real antes de elegir `<SKILL_ROOT_AUTORIZADO>`;
+no abrir registros de conexión con credenciales ni iniciar Hermes CLI para averiguarlo.
+
 ```powershell
 & '.\integrations\scripts\Install-HermesSkill.ps1' -SkillRoot '<SKILL_ROOT_AUTORIZADO>' -WhatIf
 & '.\integrations\scripts\Install-HermesSkill.ps1' -SkillRoot '<SKILL_ROOT_AUTORIZADO>'
@@ -32,4 +40,6 @@ Para Codex/Claude, usar `Install-CodexSkill.ps1` / `Install-ClaudeSkill.ps1`. El
 
 ## Evidencia y límites
 
-Se prueban formatos, preflight y scripts en raíces temporales Unicode, además de recuperación CLI local. Esto no equivale a instalar o validar sesiones nuevas de Hermes Desktop, Claude Code, Opus/Luna ni OAuth. No se modifica Jev, perfiles o configuración global para certificar compatibilidad. Los metadatos de hooks no son memorias verificadas: la captura automática queda pendiente de revisión/autorización.
+Se prueban formatos, preflight y scripts en raíces temporales Unicode, además de recuperación CLI local. También se ensayaron el [cargador completo de Hermes](HERMES_LOADER_VALIDATION.md) y su [handler nativo de terminal](HERMES_TERMINAL_VALIDATION.md), con dependencias existentes y un home temporal: cuatro consultas de memoria real coincidieron con la CLI directa, conservaron citas y límites históricos y no instalaron un perfil.
+
+Esto no equivale a instalar o validar sesiones nuevas de Hermes Desktop, Claude Code, Opus/Luna ni OAuth. El perfil real puede usar otros permisos, runtime o home mode; debe verificarse en la etapa autorizada de activación. No se modifica Jev, perfiles o configuración global para certificar compatibilidad. Los metadatos de hooks no son memorias verificadas: la captura automática queda pendiente de revisión/autorización.

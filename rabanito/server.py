@@ -135,7 +135,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
             return None
         if isinstance(value, bool) or not re.fullmatch(r"[0-9]{1,12}", str(value)):
             raise ValueError("A valid project identifier is required")
-        with Database(self.settings.database_path) as db:
+        with Database(self.settings.database_path, query_only=True, empty_if_missing=True) as db:
             row = db.one(
                 "SELECT root_path,status FROM projects WHERE project_id=? AND status IN ('active','excluded')",
                 (int(value),),
@@ -291,7 +291,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                 self._json({"results": self._dashboard_records(related)})
                 return
             if path == "/api/categories":
-                with Database(self.settings.database_path) as db:
+                with Database(self.settings.database_path, query_only=True, empty_if_missing=True) as db:
                     register_project_visibility(db, self.settings)
                     rows = db.query(
                         "SELECT DISTINCT d.category FROM documents d WHERE d.status='active' AND "
@@ -300,7 +300,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                 self._json({"categories": [row["category"] for row in rows]})
                 return
             if path == "/api/tags":
-                with Database(self.settings.database_path) as db:
+                with Database(self.settings.database_path, query_only=True, empty_if_missing=True) as db:
                     register_project_visibility(db, self.settings)
                     rows = db.query(
                         """SELECT t.tag, COUNT(*) AS document_count FROM tags t
@@ -314,7 +314,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                 self._json(dashboard_audit(self.settings))
                 return
             if path == "/api/scans":
-                with Database(self.settings.database_path) as db:
+                with Database(self.settings.database_path, query_only=True, empty_if_missing=True) as db:
                     scans = [dict(row) for row in db.query(
                         """SELECT scan_id,started_at,finished_at,status,files_seen,added,modified,unchanged,
                                   removed,skipped,errors,
@@ -335,7 +335,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                     raise ValueError("invalid active project identifier")
                 project_root_path = None
                 if raw_project_id:
-                    with Database(self.settings.database_path) as db:
+                    with Database(self.settings.database_path, query_only=True, empty_if_missing=True) as db:
                         project = db.one(
                             "SELECT root_path FROM projects WHERE project_id=? AND status='active'",
                             (int(raw_project_id),),
@@ -348,7 +348,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/projects":
                 include_excluded = query.get("all", ["0"])[0] in {"1", "true", "yes"}
-                with Database(self.settings.database_path) as db:
+                with Database(self.settings.database_path, query_only=True, empty_if_missing=True) as db:
                     condition = "status IN ('active','excluded')" if include_excluded else "status='active'"
                     rows = db.query(
                         "SELECT project_id, name, root_path, path_key, technology_json, dependencies_json, "
@@ -494,7 +494,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                 self._json({"sources": sources})
                 return
             self._json({"error": "not found"}, 404)
-        except (ValueError, TypeError, RecursionError, OSError, json.JSONDecodeError) as exc:
+        except (ValueError, TypeError, RecursionError, OSError, sqlite3.Error, json.JSONDecodeError) as exc:
             self._json({"error": f"request failed: {type(exc).__name__}"}, 400)
 
     def do_POST(self) -> None:
@@ -629,7 +629,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                     preview_source(self.settings, Path(source["path"]), str(source.get("kind", "local")))
                 source_kind = str(source.get("kind", "local"))
                 source_path = str(source["path"])
-                with Database(self.settings.database_path) as db:
+                with Database(self.settings.database_path, query_only=True, empty_if_missing=True) as db:
                     counts = {
                         str(row["status"]): int(row["count"])
                         for row in db.query(
@@ -675,11 +675,11 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                 if project_id not in (None, ""):
                     if isinstance(project_id, bool) or not re.fullmatch(r"[0-9]{1,12}", str(project_id)):
                         raise ValueError("A valid project identifier is required")
-                    with Database(self.settings.database_path) as db:
+                    with Database(self.settings.database_path, query_only=True, empty_if_missing=True) as db:
                         project = db.one("SELECT project_id, root_path, name FROM projects WHERE project_id=? AND status IN ('active','excluded')", (int(project_id),))
                 else:
                     project_path = str(payload.get("project", ""))
-                    with Database(self.settings.database_path) as db:
+                    with Database(self.settings.database_path, query_only=True, empty_if_missing=True) as db:
                         project = db.one("SELECT project_id, root_path, name FROM projects WHERE root_path=? AND status IN ('active','excluded')", (project_path,))
                 project_root = Path(project["root_path"]) if project else None
                 if not project_root or safe_relative(project_root, self.settings.projects_root) is None:
@@ -827,7 +827,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
             where.append("(lower(title) LIKE ? OR lower(relative_path) LIKE ?)")
             pattern = f"%{text_filter}%"
             params.extend([pattern, pattern])
-        with Database(self.settings.database_path) as db:
+        with Database(self.settings.database_path, query_only=True, empty_if_missing=True) as db:
             register_project_visibility(db, self.settings)
             total_matches = int(db.one(
                 f"SELECT COUNT(*) AS total FROM documents WHERE {' AND '.join(where)}", params
@@ -919,7 +919,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
         })
 
     def _open_document(self, document_id: int) -> None:
-        with Database(self.settings.database_path) as db:
+        with Database(self.settings.database_path, query_only=True, empty_if_missing=True) as db:
             register_project_visibility(db, self.settings)
             row = db.one(
                 "SELECT absolute_path, source_kind, source_root, project_root_path, status "

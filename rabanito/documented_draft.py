@@ -60,7 +60,7 @@ def preview_documented_experience(payload: dict, *, reviewed_on: str) -> dict:
                             "No writer or automatic confirmation is exposed by this command."]}
 
 
-def preview_from_stream(stream, *, reviewed_on):
+def read_draft_payload(stream):
     raw = stream.read(MAX_INPUT_BYTES + 1)
     if isinstance(raw, bytes):
         if len(raw) > MAX_INPUT_BYTES:
@@ -79,4 +79,8 @@ def preview_from_stream(stream, *, reviewed_on):
         payload = json.loads(raw, object_pairs_hook=unique_fields)
     except (json.JSONDecodeError, RecursionError):
         raise ValueError("invalid_documented_draft_json") from None
-    return preview_documented_experience(payload, reviewed_on=reviewed_on)
+    return payload
+
+
+def preview_from_stream(stream, *, reviewed_on):
+    return preview_documented_experience(read_draft_payload(stream), reviewed_on=reviewed_on)

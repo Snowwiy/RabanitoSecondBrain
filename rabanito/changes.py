@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .config import Settings
+from .config import SETTINGS_WRITE_LOCK, Settings
 from .db import Database
 from .utils import path_key, safe_relative
+from .visibility import project_visibility_sql, register_project_visibility
 
 
 def resolve_active_project_root(settings: Settings, identifier: str) -> str:
@@ -14,7 +16,7 @@ def resolve_active_project_root(settings: Settings, identifier: str) -> str:
     value = identifier.strip()
     if not value:
         raise ValueError("project cannot be empty")
-    with Database(settings.database_path) as db:
+    with Database(settings.database_path, query_only=True, empty_if_missing=True) as db:
         rows = db.query("SELECT name,root_path FROM projects WHERE status='active' ORDER BY name,root_path")
     active = [
         row for row in rows
@@ -42,7 +44,10 @@ def recent_document_changes(
     if limit == 0:
         return []
 
-    with Database(settings.database_path) as db:
+    with SETTINGS_WRITE_LOCK:
+        settings = Settings(settings.root, deepcopy(settings.raw))
+    with Database(settings.database_path, query_only=True, empty_if_missing=True) as db:
+        register_project_visibility(db, settings)
         db.connection.create_function("rabanito_path_key", 1, lambda value: path_key(str(value or "")))
         active_project_keys: set[str] = set()
         for project in db.query("SELECT root_path FROM projects WHERE status='active'"):
@@ -80,7 +85,8 @@ def recent_document_changes(
             """SELECT c.change_id,c.scan_id,c.document_id,c.change_type,c.reason,c.occurred_at,
                       d.title,d.source_kind,d.project_name,d.relative_path,d.status
                FROM document_changes c JOIN documents d ON d.document_id=c.document_id
-               WHERE (""" + " OR ".join(source_conditions) + ") AND " + association_condition + project_filter_sql +
+               WHERE (""" + " OR ".join(source_conditions) + ") AND " + association_condition +
+            " AND " + project_visibility_sql('d') + project_filter_sql +
             " ORDER BY c.change_id DESC LIMIT ?",
             params,
         )

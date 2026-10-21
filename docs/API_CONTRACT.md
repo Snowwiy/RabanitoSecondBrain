@@ -10,6 +10,60 @@ JSON UTF-8. Las consultas que pueden contener texto privado utilizan POST, no UR
 
 ## Rutas vigentes
 
+[Autorización de fuentes](SOURCE_AUTHORIZATION.md): los lectores documentales
+ocultan caché de raíces retiradas, cambiadas o deshabilitadas antes de recuperar
+resultados. Misma API; sin borrar el índice ni exigir sincronización para revocar.
+
+[Inventario de Audit](AUDIT_INVENTORY.md): sección aditiva `source_inventory`,
+metadata-only y acotada. Distingue archivos elegibles aún no indexados y cobertura
+parcial; no cambia contadores previos, no indexa ni incorpora proyectos. El
+contrato se documentó antes de implementar la ampliación. Level Up consume estos
+avisos con el formato de recomendaciones existente; no añade campos o rutas ni
+autoriza una sincronización implícita.
+
+[Lecturas documentales](DOCUMENT_READERS.md): mismas respuestas/campos, sin
+DDL/backfills implícitos al consultar. Primera consulta sin índice usa una vista
+vacía en RAM, no crea la base persistente. Un esquema existente inválido no se
+oculta como base vacía. Los respaldos requieren un índice persistente existente.
+
+[Lecturas KG](GRAPH_SNAPSHOT.md): reutilizan una prueba global completa solo en
+el mismo snapshot limpio; mismos campos, cursores, permisos y presupuestos.
+
+[Publicación Cyber](CYBER_PUBLICATION.md): limpieza FTS por lotes en la misma
+transacción, sin campos/rutas/esquemas nuevos. Preserva atomicidad, fechas,
+historial y límites de proveedores; no sincroniza ni migra por una consulta.
+
+[Contexto Cyber por proveedor](CYBER_CONTEXT.md): corrección de recuperación
+Python y selector CLI opcional `cyber context --source`; no añade ruta HTTP ni
+campos al lector Markdown. Sin selector conserva el contexto multisource.
+
+[Indexación protegida](INDEX_STORAGE.md): mismas respuestas y descubrimiento;
+IDs estables al actualizar perfiles, copias anteriores recuperables y bitácora
+sin reemplazo. No hay nuevas rutas ni migraciones de API por este almacenamiento.
+El arranque CLI valida y fija los directorios propios antes de inicializarlos;
+conserva su contrato de configuración portable. No añade campos HTTP ni implica
+que todas las operaciones que abren SQLite compartan el guard del indexador.
+
+[Informes generados](REPORT_STORAGE.md): `audit --write`/`level-up` conservan sus
+campos y ubicación; publicación protegida sin nuevos endpoints. Una exportación
+fallida entre formatos no devuelve un par completo ni borra trabajo concurrente.
+
+La protección de [publicación de decisiones](DECISION_STORAGE.md) corresponde a
+la CLI/API Python, no agrega endpoints de escritura. POST `/api/decisions` sigue
+siendo una consulta; el lector POST `/api/doc/content` conserva su contrato.
+
+[Grill Me](INTERVIEWS.md) también sigue siendo CLI interactiva: revisión del
+candidato exacto y `APROBAR` antes de publicación. No se expone un escritor de
+entrevistas por HTTP ni se amplían los campos del lector Markdown.
+
+El guardado de experiencias documentadas es exclusivamente CLI, con revisión
+humana previa y digest exacto; ver [Documented Memory](DOCUMENTED_MEMORY.md).
+No añade endpoint ni campos a `/api/doc/content`. Sus eventos de `/api/scans`
+usan `partial`/files_seen=1/source_summary.internal porque solo se indexó una
+nota, no se sincronizaron todas las fuentes. No interpretar ese evento como
+frescura de Obsidian, proyectos o conectores públicos. No cambia los enums
+existentes ni requiere un renderer nuevo.
+
 | Operación | Método/ruta | Datos principales |
 | --- | --- | --- |
 | Salud y resumen | GET `/api/health`, `/api/stats` | métricas locales |
@@ -33,6 +87,12 @@ JSON UTF-8. Las consultas que pueden contener texto privado utilizan POST, no UR
 | Exclusiones | POST `/api/project-exclusion` | alcance exacto aprobado |
 | Abrir original | POST `/api/open/{id}` | solo IDs existentes/rutas autorizadas, no rutas arbitrarias |
 | Lector Markdown real | POST `/api/doc/content` | document_id entero positivo seguro JS, max_bytes entero1–65536; ambos obligatorios, sin campos extra/duplicados. Lectura RO sin sincronizar; formato compatible con Frontend-Design |
+
+`/api/changes` aplica autorización actual de origen, asociación y elegibilidad
+documental antes del límite de eventos, incluidos contextos de entorno excluidos.
+No elimina filas históricas, reconstruye el índice ni oculta eventos de borrado
+de documentos cuyo origen y ruta siguen autorizados. Mismos campos y filtros;
+la configuración se evalúa con un snapshot por consulta.
 
 Consultar las validaciones del handler para los nombres exactos/campos opcionales. No ampliar silenciosamente límites ni convertir `null` en acceso global. No todas las operaciones CLI tienen endpoint: inspección de dependencias, VEX y captura revisada no deben simularse desde la UI.
 

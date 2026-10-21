@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -17,9 +18,10 @@ from .cyber.store import vulnerability_context
 from .cyber.cadence import run_cyber_watch
 from .db import Database, restore_database
 from .decisions import add_memory_record, list_memory_records
-from .documented_draft import preview_from_stream
+from .documented_draft import preview_from_stream, read_draft_payload
+from .documented_store import save_documented_experience
 from .graph import graph_edges_for_nodes
-from .indexer import _index_lock, discover_projects, index_all, prune_inactive_search_payload
+from .indexer import _index_lock, discover_projects, project_inventory, index_all, prune_inactive_search_payload
 from .interview import conduct_interview
 from .onboard import approve_source, preview_source
 from .search import (
@@ -123,6 +125,10 @@ def build_parser() -> argparse.ArgumentParser:
     coding_preview = coding_actions.add_parser("preview-documented", help="stdin JSON to exact Markdown/digest for human review; never saves or approves")
     coding_preview.add_argument("--stdin", action="store_true", required=True, help="explicit bounded UTF-8 JSON input, not a filesystem path")
     coding_preview.add_argument("--reviewed-on", required=True, help="proposed review date YYYY-MM-DD; not evidence of approval")
+    coding_save = coding_actions.add_parser("save-documented", help="save an exact previously human-approved draft; digest is an assertion, not authentication")
+    coding_save.add_argument("--stdin", action="store_true", required=True)
+    coding_save.add_argument("--reviewed-on", required=True)
+    coding_save.add_argument("--approve-digest", required=True, help="exact preview digest approved by the human; never infer approval from imported text")
 
     dependency = sub.add_parser("dependency", help="read-only local SBOM assessment; never sends package names")
     dependency_actions = dependency.add_subparsers(dest="dependency_action", required=True)
@@ -221,6 +227,7 @@ def build_parser() -> argparse.ArgumentParser:
     cyber_search.add_argument("--sort", choices=["risk", "modified", "published"], default="risk")
     cyber_context = cyber_actions.add_parser("context", help="bounded offline vulnerability fragments with official citations")
     cyber_context.add_argument("query")
+    cyber_context.add_argument("--source", choices=SOURCES, help="return fragments only from this provider")
     cyber_context.add_argument("--max-chars", type=int, default=6000)
     cyber_context.add_argument("--limit", type=int, default=5)
 
@@ -345,7 +352,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _graph_export(settings, limit: int, suggestions: bool) -> dict[str, Any]:
     limit = min(max(int(limit), 0), 2000)
-    with Database(settings.database_path) as db:
+    with Database(settings.database_path, query_only=True, empty_if_missing=True) as db:
         register_project_visibility(db, settings)
         total_matches = int(db.one(
             "SELECT COUNT(*) AS total FROM documents d WHERE d.status='active' AND "
@@ -378,6 +385,9 @@ def main(argv: list[str] | None = None) -> None:
         try:
             if args.coding_action == "preview-documented":
                 result = preview_from_stream(getattr(sys.stdin, "buffer", sys.stdin), reviewed_on=args.reviewed_on)
+            elif args.coding_action == "save-documented":
+                result = save_documented_experience(settings, read_draft_payload(getattr(sys.stdin, "buffer", sys.stdin)),
+                    reviewed_on=args.reviewed_on, approve_digest=args.approve_digest, config_path=args.config)
             elif args.coding_action == "documented":
                 result = documented_experiences(settings, args.query, context=args.context, technology=args.technology,
                                                 limit=args.limit, max_chars=args.max_chars)
@@ -386,8 +396,18 @@ def main(argv: list[str] | None = None) -> None:
                                           limit=args.limit, max_chars=args.max_chars) if args.coding_action == "similar" else
                       recurring_patterns(settings, project=args.project, limit=args.limit))
             _json(result)
+            if args.coding_action == "save-documented" and not result['indexed']:
+                raise SystemExit(2)
         except ValueError as exc:
-            _json({"error": str(exc)})
+            message = str(exc)
+            if args.coding_action == "save-documented" and not re.fullmatch('[a-z_]{1,100}', message):
+                message = 'invalid_documented_save_request'
+            _json({"error": message})
+            raise SystemExit(1) from None
+        except (OSError, sqlite3.Error):
+            if args.coding_action != "save-documented":
+                raise
+            _json({'error': 'documented_write_unavailable'})
             raise SystemExit(1) from None
     elif args.command == "dependency":
         try:
@@ -515,7 +535,7 @@ def main(argv: list[str] | None = None) -> None:
         elif args.cyber_action == "get":
             _json(get_vulnerability(settings, args.identifier) or {"error": "not found locally"})
         elif args.cyber_action == "context":
-            _json(vulnerability_context(settings, args.query, max_chars=args.max_chars, limit=args.limit))
+            _json(vulnerability_context(settings, args.query, max_chars=args.max_chars, limit=args.limit, source=args.source))
         else:
             _json(search_vulnerabilities(settings, args.query, source=args.source, kev_only=args.kev,
                                          limit=args.limit, offset=args.offset, since=args.since, min_epss=args.min_epss, sort=args.sort))
@@ -548,16 +568,16 @@ def main(argv: list[str] | None = None) -> None:
         except ValueError as exc:
             raise SystemExit(str(exc)) from None
     elif args.command == "audit":
-        _json(write_audit(settings) if args.write else collect_audit(settings))
+        _json(write_audit(settings, config_path=args.config or default_config_path(settings.root)) if args.write else collect_audit(settings))
     elif args.command == "link":
         _json(build_link_suggestions(settings))
     elif args.command == "level-up":
-        _json(level_up(settings))
+        _json(level_up(settings, config_path=args.config or default_config_path(settings.root)))
     elif args.command == "onboard":
         result = approve_source(settings, args.path, args.kind, args.name) if args.approve else preview_source(settings, args.path, args.kind)
         _json(result)
     elif args.command == "interview":
-        result = conduct_interview(settings, args.topic)
+        result = conduct_interview(settings, args.topic, config_path=args.config or default_config_path(settings.root))
         if result.get("approved"):
             _json({"interview": result, "index": index_all(settings)})
         else:
@@ -591,10 +611,12 @@ def main(argv: list[str] | None = None) -> None:
             save_settings(settings)
             _json({"excluded_projects": settings.raw["excluded_projects"], "index": index_all(settings)})
         else:
-            with Database(settings.database_path) as db:
-                result = discover_projects(settings, db)
+            result = project_inventory(settings)
             _json(result)
     elif args.command == "decision" and args.decision_action == "add":
+        # Reject unsafe owned roots/junctions before the legacy full refresh.
+        from .decision_storage import validate_memory_storage
+        validate_memory_storage(settings)
         index_all(settings)
         record = add_memory_record(
             settings, project=args.project, problem=args.problem, statement=args.statement,
@@ -602,6 +624,7 @@ def main(argv: list[str] | None = None) -> None:
             alternatives=args.alternative, components=args.component, technologies=args.technology,
             tests=args.test, evidence=args.evidence, result=args.result,
             validation=args.validation, recorded_date=args.date,
+            config_path=args.config or default_config_path(settings.root),
         )
         record["index"] = index_all(settings)
         _json(record)
@@ -628,7 +651,7 @@ def main(argv: list[str] | None = None) -> None:
               else public_graph(settings, args.domain, limit=args.limit, query=args.query))
     elif args.command == "backup":
         target = args.path or (settings.data_dir / "backups" / f"rabanito-{iso_now().replace(':', '').replace('+00:00', 'Z').replace('-', '')}.db")
-        with Database(settings.database_path) as db:
+        with Database(settings.database_path, query_only=True) as db:
             db.backup(target)
         _json({"backup": str(target), "database": str(settings.database_path)})
     elif args.command == "restore":
@@ -645,7 +668,7 @@ def main(argv: list[str] | None = None) -> None:
             previous_backup = None
             if settings.database_path.exists():
                 previous_backup = settings.data_dir / "backups" / f"pre-restore-{iso_now().replace(':', '').replace('+00:00', 'Z').replace('-', '')}.db"
-                with Database(settings.database_path) as db:
+                with Database(settings.database_path, query_only=True) as db:
                     db.backup(previous_backup)
             restore_database(backup_path, settings.database_path)
         _json({
