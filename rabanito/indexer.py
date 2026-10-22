@@ -261,6 +261,8 @@ def _iter_tree(
     excluded_roots: set[str] | None = None,
 ) -> Iterator[Path]:
     if not root.exists() or not root.is_dir():
+        if on_error:
+            on_error(OSError('source_directory_unavailable'))
         return
     excluded_root_keys = excluded_roots or set()
     pending = [root]
@@ -1104,7 +1106,12 @@ def _discover_projects_impl(
     policy = settings.policy("projects")
     excluded = {str(item).casefold() for item in policy.get("exclude_dirs", [])} | DEFAULT_EXCLUDED_DIRS
     discovered: list[dict[str, Any]] = []
-    if not root.exists() or _is_reparse_path(root):
+    from .scan_guard import source_stamp, mass_change
+    try:
+        initial_stamp = source_stamp(root)
+    except OSError:
+        if scan_state is not None:
+            scan_state['failed_kinds'].add('projects')
         return discovered
     scan_complete = True
     try:
@@ -1261,11 +1268,22 @@ def _discover_projects_impl(
             "dependency_errors": dependency_errors,
             "first_seen": first_seen, "last_seen": now,
         })
+    try:
+        scan_complete = scan_complete and source_stamp(root) == initial_stamp
+    except OSError:
+        scan_complete = False
+    if not scan_complete and scan_state is not None:
+        scan_state['failed_kinds'].add('projects')
     if scan_complete:
         present = {path_key(project_root) for project_root in project_dirs}
-        for row in db.query("SELECT project_id, path_key FROM projects WHERE status='active'"):
-            if row["path_key"] not in present:
-                db.execute("UPDATE projects SET status='missing' WHERE project_id=?", (row["project_id"],))
+        active = db.query("SELECT project_id,path_key,root_path FROM projects WHERE status='active'")
+        missing = [dict(row) for row in active if row['path_key'] not in present
+                   and safe_relative(Path(row['root_path']),root) not in {None,'','.'}]
+        if scan_state is not None:
+            scan_state['missing_projects'] = missing
+        elif not mass_change(len(missing),len(active)):
+            for row in missing:
+                db.execute("UPDATE projects SET status='missing' WHERE project_id=?", (row['project_id'],))
     db.commit()
     return discovered
 
@@ -1565,14 +1583,16 @@ def iter_source_files(
         project_profile_bindings[path_key(profile)] = (project_name, project_root_path)
         decision_folder = f"{slugify(project_name)}-{sha256_text(path_key(project_root))[:8]}"
         decision_prefix_bindings.append((f"decisions/{decision_folder}".casefold(), project_name, project_root_path))
-    for kind, root, name in settings.source_roots():
+    from .scan_guard import source_stamp, complete_source
+    for kind, root, name in scan_state.get('expected_sources', settings.source_roots()):
+        scan_state.setdefault('attempted_sources',set()).add((kind,path_key(root)))
         try:
+            initial_stamp = source_stamp(root)
             if _is_reparse_path(root) or not root.is_dir():
                 scan_state["failed_kinds"].add(kind)
                 continue
             with os.scandir(root) as root_entries:
                 next(root_entries, None)
-            scan_state["scanned_kinds"].add(kind)
         except OSError:
             scan_state["failed_kinds"].add(kind)
             continue
@@ -1598,6 +1618,7 @@ def iter_source_files(
                             "projects", project_root, path, _relative(project_root, path),
                             project["name"], str(project_root),
                         )
+            complete_source(scan_state, kind, root, initial_stamp)
             continue
         policy = _policy(settings, kind)
         excluded = {str(item).casefold() for item in policy.get("exclude_dirs", [])} | DEFAULT_EXCLUDED_DIRS
@@ -1620,6 +1641,7 @@ def iter_source_files(
                     if association is not None:
                         associated_name, associated_root = association
                 yield SourceFile(kind, root, path, relative, associated_name, associated_root)
+        complete_source(scan_state, kind, root, initial_stamp)
 
 
 def _category(source: SourceFile, parsed: ParsedDocument) -> str:
@@ -1861,13 +1883,13 @@ def _resolve_links(db: Database, *, source_document_id: int | None = None) -> No
         )
 
 
-def _index_all_locked(settings: Settings, force: bool = False) -> dict[str, Any]:
+def _index_all_locked(settings: Settings, force: bool = False, approve_retirements: str | None = None) -> dict[str, Any]:
     from .index_storage import index_scope
     with index_scope(settings) as scope:
-        return _index_all_impl(scope.settings,force=force)
+        return _index_all_impl(scope.settings,force=force,approve_retirements=approve_retirements)
 
 
-def _index_all_impl(settings: Settings, force: bool = False) -> dict[str, Any]:
+def _index_all_impl(settings: Settings, force: bool = False, approve_retirements: str | None = None) -> dict[str, Any]:
     # Scan markers need sub-second uniqueness so rapid successive CLI calls can
     # still detect a deletion reliably.
     started = datetime.now(timezone.utc).isoformat(timespec="microseconds")
@@ -1882,12 +1904,18 @@ def _index_all_impl(settings: Settings, force: bool = False) -> dict[str, Any]:
         parser_version = db.one("SELECT value FROM meta WHERE key='parser_version'")
         reparse_for_parser_update = not parser_version or str(parser_version["value"]) != str(PARSER_VERSION)
         effective_force = force or reparse_for_parser_update
-        scan_state = {"scanned_kinds": set(), "failed_kinds": set()}
+        from .scan_guard import configuration_signature, plan_retirements, load_bindings, remember_bindings
+        scan_state = {"scanned_kinds": set(), "failed_kinds": set(),
+                      'expected_sources':list(settings.source_roots()),
+                      'configuration_signature':configuration_signature(settings),
+                      'source_bindings':load_bindings(db),
+                      'previous_active_projects':db.one("SELECT count(*) FROM projects WHERE status='active'")[0]}
         project_info = discover_projects(settings, db, started, scan_state)
         project_statuses: dict[str, str] = {}
-        for row in db.query("SELECT name, root_path, status FROM projects"):
+        missing_ids = {row['project_id'] for row in scan_state.get('missing_projects', [])}
+        for row in db.query("SELECT project_id,name, root_path, status FROM projects"):
             project_root = Path(row["root_path"])
-            status = str(row["status"])
+            status = 'missing' if row['project_id'] in missing_ids else str(row["status"])
             project_statuses[path_key(_project_memory_path(settings, project_root))] = status
             decision_folder = f"{slugify(str(row['name']))}-{sha256_text(path_key(project_root))[:8]}"
             project_statuses[f"decision:{decision_folder.casefold()}"] = status
@@ -1930,6 +1958,7 @@ def _index_all_impl(settings: Settings, force: bool = False) -> dict[str, Any]:
                         continue
                 parsed = parse_markdown(source.path, raw_text=raw_text)
                 if parsed.parse_error:
+                    scan_state['failed_kinds'].add(source.kind)
                     stats["errors"] += 1
                     source_summary["errors"] += 1
                     if existing:
@@ -1950,6 +1979,15 @@ def _index_all_impl(settings: Settings, force: bool = False) -> dict[str, Any]:
                 stats["errors"] += 1
                 source_summary["errors"] += 1
                 continue
+        candidates, missing_projects, guard, coverage = plan_retirements(
+            db,settings,scan_state,started,approve_retirements)
+        stats['retirement_guard'],stats['scan_coverage'] = guard,coverage
+        if ((guard['unconfigured_documents_preserved'] and not scan_state['failed_kinds']) or not coverage['expected_sources']
+                or guard['status'] in {'review_required','approval_rejected'}):
+            stats['errors'] += 1
+        db.execute("INSERT INTO meta(key,value) VALUES('index_retirement_guard',?) "
+                   "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                   (json.dumps({'scan_id':scan_id,'retirement_guard':guard,'scan_coverage':coverage}),))
         for kind in sorted(scan_state["failed_kinds"]):
             source_summary = stats["source_summary"].setdefault(
                 kind,
@@ -1960,59 +1998,21 @@ def _index_all_impl(settings: Settings, force: bool = False) -> dict[str, Any]:
             if source_summary["errors"] == 0:
                 source_summary["errors"] = 1
                 stats["errors"] += 1
-        disabled_roots = {
-            (str(item.get("kind", "local")), path_key(item["path"]))
-            for item in settings.additional_sources()
-            if item.get("path") and not item.get("enabled", True)
-        }
-        if disabled_roots:
-            candidates = db.query("SELECT document_id, source_kind, source_root FROM documents WHERE status IN ('active','skipped')")
-            retired_ids = [
-                int(row["document_id"])
-                for row in candidates
-                if (str(row["source_kind"]), path_key(row["source_root"])) in disabled_roots
-            ]
-            for offset in range(0, len(retired_ids), 500):
-                batch = retired_ids[offset:offset + 500]
-                placeholders = ",".join("?" for _ in batch)
-                retired = db.query(
-                    f"SELECT document_id FROM documents WHERE status IN ('active','skipped') AND document_id IN ({placeholders})",
-                    batch,
-                )
-                cursor = db.execute(
-                    f"UPDATE documents SET status='deleted' WHERE status IN ('active','skipped') AND document_id IN ({placeholders})",
-                    batch,
-                )
-                for row in retired:
-                    _record_document_change(db, scan_id, int(row["document_id"]), "removed", "source_excluded", started)
-                stats["removed"] += cursor.rowcount
-        scanned_kinds = scan_state["scanned_kinds"] - scan_state["failed_kinds"]
-        expected_kinds = {kind for kind, _root, _name in settings.source_roots()}
-        if (
-            not scan_state["failed_kinds"] and not stats["errors"]
-            and expected_kinds.issubset(scanned_kinds)
-        ):
+        if coverage['complete'] and not stats['errors']:
+            remember_bindings(db,scan_state)
             db.execute(
                 "INSERT INTO meta(key,value) VALUES('parser_version',?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (str(PARSER_VERSION),),
             )
-        if scanned_kinds:
-            placeholders = ",".join("?" for _ in scanned_kinds)
-            params = [started, *sorted(scanned_kinds)]
-            removed_rows = db.query(
-                f"SELECT document_id FROM documents WHERE status IN ('active','skipped') AND last_seen_scan<>? AND source_kind IN ({placeholders})",
-                params,
-            )
-            cursor = db.execute(
-                f"UPDATE documents SET status='deleted' WHERE status IN ('active','skipped') AND last_seen_scan<>? AND source_kind IN ({placeholders})",
-                params,
-            )
-            for row in removed_rows:
-                _record_document_change(
-                    db, scan_id, int(row["document_id"]), "removed", "not_seen_in_complete_scan", started,
-                )
-            stats["removed"] += cursor.rowcount
+        for row,_key,reason in candidates:
+            cursor = db.execute("UPDATE documents SET status='deleted' WHERE document_id=? AND status IN ('active','skipped')",
+                                (row['document_id'],))
+            if cursor.rowcount:
+                _record_document_change(db,scan_id,int(row['document_id']),'removed',reason,started)
+                stats['removed'] += cursor.rowcount
+        for project in missing_projects:
+            db.execute("UPDATE projects SET status='missing' WHERE project_id=?",(project['project_id'],))
         _resolve_links(db)
         finished = iso_now()
         stats["finished_at"] = finished
@@ -2034,9 +2034,12 @@ def _index_all_impl(settings: Settings, force: bool = False) -> dict[str, Any]:
     return stats
 
 
-def index_all(settings: Settings, force: bool = False) -> dict[str, Any]:
+def index_all(settings: Settings, force: bool = False, *, approve_retirements: str | None = None) -> dict[str, Any]:
+    if approve_retirements is not None and (not isinstance(approve_retirements,str)
+            or not re.fullmatch(r'[0-9a-f]{64}',approve_retirements)):
+        raise ValueError('invalid_retirement_approval_digest')
     with _index_lock(settings):
-        return _index_all_locked(settings, force=force)
+        return _index_all_locked(settings, force=force,approve_retirements=approve_retirements)
 
 
 def prune_inactive_search_payload(settings: Settings, *, apply: bool = False) -> dict[str, Any]:

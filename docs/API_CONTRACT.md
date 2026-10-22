@@ -10,6 +10,12 @@ JSON UTF-8. Las consultas que pueden contener texto privado utilizan POST, no UR
 
 ## Rutas vigentes
 
+[Retiro incremental protegido](INDEX_RETIREMENT.md): no se retiran filas de una
+raíz anterior por escanear otra del mismo tipo. Cobertura incompleta y caídas
+masivas producen `partial`/`error`, no `ok`. POST `/api/index` no habilita aprobación
+de retiros ni cambia sus campos compactos; leer `status`, no solo HTTP200. La CLI
+completa expone cobertura/plan y un flag de aprobación exacta, nunca un bypass.
+
 [Autorización de fuentes](SOURCE_AUTHORIZATION.md): los lectores documentales
 ocultan caché de raíces retiradas, cambiadas o deshabilitadas antes de recuperar
 resultados. Misma API; sin borrar el índice ni exigir sincronización para revocar.
