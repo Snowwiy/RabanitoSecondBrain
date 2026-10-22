@@ -182,13 +182,18 @@ class UvLockTests(unittest.TestCase):
 
     def test_only_selected_file_is_read_not_pyproject_or_local_sources(self):
         self.write(lock(package(source={"editable": "../not-followed"})))
-        actual_open = Path.open
+        from rabanito import source_files
+        from contextlib import contextmanager
+        actual_open = source_files._native_open
         opened = []
+        @contextmanager
         def selected_only(path, *args, **kwargs):
             opened.append(path)
             if path != self.path: raise AssertionError("unexpected file read")
-            return actual_open(path, *args, **kwargs)
-        with patch.object(Path, "open", selected_only): report = self.inspect()
+            with actual_open(path, *args, **kwargs) as stream:
+                yield stream
+        with patch.object(source_files, '_native_open', selected_only), patch.object(Path, 'open', side_effect=AssertionError('unpinned file read')):
+            report = self.inspect()
         self.assertEqual(opened, [self.path])
         self.assertEqual(report["summary"], {"needs_review": 1})
 

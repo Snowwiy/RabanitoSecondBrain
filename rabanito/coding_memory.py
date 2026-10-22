@@ -17,6 +17,7 @@ from .indexer import DEFAULT_EXCLUDED_DIRS, _excluded_directory, _excluded_name,
 from .search import DOCUMENT_BM25, fts_query
 from .utils import contains_reparse_component, path_key, redact_sensitive_lines, safe_relative, sha256_text
 from .visibility import register_project_visibility
+from .source_files import file_visibility_sql, open_source
 
 
 def _arguments(query: str, technology: str | None, limit: int, max_chars: int) -> tuple[int, int]:
@@ -67,6 +68,7 @@ def _verified_records(settings: Settings, query: str, project: str | None, techn
                   f"json_extract({fm},'$.status')='confirmed'", f"json_extract({fm},'$.validation')='passed'",
                   f"json_extract({fm},'$.record_type') IN ('decision','fact')", "p.status='active'",
                   "rabanito_document_eligible(d.source_kind,d.relative_path)=1",
+                  file_visibility_sql('d'),
                   f"rabanito_project_visible('internal',p.name,{root_sql})=1"]
     params = [path_key(settings.knowledge_root)]
     if document_id is not None:
@@ -122,7 +124,7 @@ def _verified_records(settings: Settings, query: str, project: str | None, techn
             if byte_count > 8 * 1024 * 1024:
                 coverage["byte_budget_reached"] = True
                 break
-            with path.open("rb") as stream:
+            with open_source(path) as stream:
                 raw_bytes = stream.read(256 * 1024 + 1)
             if contains_reparse_component(path) or len(raw_bytes) > 256 * 1024:
                 raise ValueError("unsafe")

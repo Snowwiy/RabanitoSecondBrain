@@ -202,7 +202,9 @@ class _Inventory:
             return
         row = self.db.one(
             'SELECT d.source_kind,d.source_root,d.status,d.project_root_path,'
-            + project_visibility_sql('d') + ' AS visible FROM documents d WHERE d.path_key=?', (key,),
+            + project_visibility_sql('d', live_file=False, include_derived=False)
+            + ' AND rabanito_file_visible(d.source_root,d.relative_path,d.absolute_path,d.path_key)=1'
+            + ' AS visible FROM documents d WHERE d.path_key=?', (key,),
         )
         if kind == 'internal' and not self.internal_allowed(path, relative, row):
             return

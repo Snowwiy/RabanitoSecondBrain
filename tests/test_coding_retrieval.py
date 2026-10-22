@@ -98,7 +98,9 @@ class CodingMemoryTests(unittest.TestCase):
         path.write_bytes(original + b"\nUnindexed change\n")
         result = similar_experiences(self.settings, "rollback")
         self.assertEqual(result["results"], [])
-        self.assertEqual(result["coverage"]["stale_or_unverifiable_skipped"], 1)
+        # File authority rejects the row before query-based candidate counts.
+        self.assertEqual(result["coverage"]["stale_or_unverifiable_skipped"], 0)
+        self.assertEqual(result["coverage"]["candidates_examined"], 0)
         path.write_bytes(original)
         (self.alpha / "README.md").unlink()
         result = similar_experiences(self.settings, "rollback")

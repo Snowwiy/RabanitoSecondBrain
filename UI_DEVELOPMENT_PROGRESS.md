@@ -1,5 +1,15 @@
 # UI development progress
 
+## Sincronización final H1–H6 (2026-10-22)
+
+- Integración controlada de `origin/main` `0f5c12185fd4b4de07fe16ed3d008edce428f58e` sobre el checkpoint `4f71ee3e5da98b3e28f3ace33a2aea710931b50f`, exclusivamente en `G:\Hermes\Memoria\Rabanito-SecondBrain-Integration`.
+- Resueltos `rabanito/server.py` y `rabanito/knowledge_graph/query.py`, manteniendo las protecciones HTTP/autorización de Sol y el guard KG existente, condicionado ahora a validación viva de fuentes.
+- H1, H5 y H6 integrados con pruebas de autorización de archivos, framing/timeout y rollback/recovery de migraciones. H3/H4 se conservan. H2 completado: el frontend valida cobertura, estado del guard y la marca `last_complete_scan`; ya no confunde `HTTP 200` ni `status=ok` sin diagnósticos con sincronización completa.
+- Regresión: **1,097 Python, 1,095 aprobadas, 2 omitidas, 0 fallidas**; **97 JavaScript aprobadas, 0 fallidas**. Suite enfocada H1/H2/H3/H4/H5/H6/KG: **83 ejecutadas, 82 aprobadas, 1 omitida**. Los detalles y motivos están en `UI_TEST_RESULTS.md`.
+- Visual QA de navegador y Narrator no ejecutados: no está disponible el runtime Jev requerido. El nuevo estado de cobertura/revisión requiere inspección visual manual posterior; no se reporta evidencia visual inexistente.
+- La base operativa, su respaldo y las fuentes originales no se abrieron. Solo se usaron fixtures/SQLite temporales y servidores loopback de prueba. Remotos de `main` y `Frontend-Design` permanecen sin escritura; el worktree de `Frontend-Design` mantiene sus ediciones locales previas.
+- El próximo hito es la segunda auditoría independiente de Astra. Esta fase no deja nuevas funcionalidades visuales en curso.
+
 ## Corrección de coherencia H2/H3/H4 (2026-10-22)
 
 - La implementación quedó publicada en `origin/integration/rabanito-3.0` como `677e02c8ff83cee2381c09d94888282fd2dcdf6f`.

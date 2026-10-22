@@ -12,6 +12,8 @@ from ..db import Database
 from ..utils import contains_reparse_component, iso_now, path_key, safe_relative
 from ..indexer import DEFAULT_EXCLUDED_DIRS, _excluded_directory, _excluded_name
 from ..source_policy import document_eligibility
+from ..source_files import file_visibility_sql
+from ..visibility import register_project_visibility
 
 
 ENGINE_VERSION = 4
@@ -175,6 +177,7 @@ def set_state(db: Database, key: str, value: str) -> None:
 
 def configure(db: Database, settings: Settings) -> dict[int, dict]:
     """Permissions are evaluated from current roots/exclusions, never the cache."""
+    register_project_visibility(db, settings)
     projects = {}
     for row in db.query("SELECT project_id,name,root_path,status FROM projects"):
         root = Path(row["root_path"])
@@ -221,7 +224,7 @@ def configure(db: Database, settings: Settings) -> dict[int, dict]:
 def descriptors(db: Database) -> str:
     """Metadata fingerprints only; normalized bodies are loaded per changed input."""
     tables = {r[0] for r in db.query("SELECT name FROM sqlite_master WHERE type='table'")}
-    docs = "SELECT * FROM documents WHERE status='active' AND kg_dvisible(source_kind,source_root,project_root_path,project_name)=1 AND kg_document_path_visible(source_kind,relative_path)=1"
+    docs = "SELECT * FROM documents WHERE status='active' AND kg_dvisible(source_kind,source_root,project_root_path,project_name)=1 AND kg_document_path_visible(source_kind,relative_path)=1 AND " + file_visibility_sql('documents')
     # Reviewed evidence resolves indexed paths to document IDs. A path-map
     # change can affect that relationship even if the memory text is unchanged.
     document_map = "(SELECT fp FROM M)"

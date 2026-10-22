@@ -3219,7 +3219,9 @@ aliases: ["Line\nBreak", "Quoted: \"Name\""]
             with patch("rabanito.indexer.parse_markdown", return_value=failed_parse):
                 result = index_all(settings)
             self.assertEqual(result["errors"], 1)
-            self.assertTrue(search_documents(settings, "verificable", source_kind="obsidian"))
+            self.assertFalse(search_documents(settings, "verificable", source_kind="obsidian"))
+            with Database(settings.database_path, query_only=True) as db:
+                self.assertEqual(db.one("SELECT count(*) FROM documents_fts WHERE documents_fts MATCH 'verificable'")[0], 1)
 
     def test_link_parser_ignores_code_and_classifies_reference_types(self) -> None:
         with self.temporary_directory() as temp:
@@ -3375,7 +3377,7 @@ aliases: ["Line\nBreak", "Quoted: \"Name\""]
                 )["status"]
             self.assertEqual(scan_after, scan_before)
             self.assertEqual(missing_status, "active", "Audit must report drift, not silently synchronize the index")
-            self.assertTrue(search_documents(settings, "old text", source_kind="obsidian"))
+            self.assertFalse(search_documents(settings, "old text", source_kind="obsidian"))
 
     def test_audit_index_drift_budget_is_visible_and_dashboard_redacts_paths_and_content(self) -> None:
         with self.temporary_directory() as temp:
@@ -4673,6 +4675,10 @@ aliases: ["Line\nBreak", "Quoted: \"Name\""]
             with Database(settings.database_path) as db:
                 self.assertEqual(db.one("SELECT COUNT(*) AS c FROM document_changes")["c"], 2)
             backup_settings = Settings(settings.root, {**settings.raw, "database_path": str(backup_path)})
+            self.assertFalse(search_documents(backup_settings, "original recovery marker", source_kind="obsidian"))
+            # The DB snapshot alone is not authority to serve stale source text.
+            # This is an explicit synthetic source recovery, not application I/O.
+            note.write_text("# Snapshot\noriginal recovery marker\n", encoding='utf-8')
             self.assertTrue(search_documents(backup_settings, "original recovery marker", source_kind="obsidian"))
             self.assertFalse(search_documents(backup_settings, "changed live source marker", source_kind="obsidian"))
             with Database(backup_path) as db:
@@ -4701,6 +4707,8 @@ aliases: ["Line\nBreak", "Quoted: \"Name\""]
                 self.assertEqual(check.execute("PRAGMA foreign_key_check").fetchall(), [])
             finally:
                 check.close()
+            self.assertFalse(search_documents(settings, "snapshot recovery marker", source_kind="obsidian"))
+            note.write_text("# Restore\nsnapshot recovery marker\n", encoding='utf-8')
             self.assertTrue(search_documents(settings, "snapshot recovery marker", source_kind="obsidian"))
             self.assertFalse(search_documents(settings, "newer live marker", source_kind="obsidian"))
             with Database(settings.database_path) as db:
@@ -4754,9 +4762,12 @@ aliases: ["Line\nBreak", "Quoted: \"Name\""]
             pre_restore_path = Path(result["pre_restore_backup"])
             self.assertTrue(pre_restore_path.is_file())
             restored_settings = Settings(settings.root, {**settings.raw, "database_path": str(pre_restore_path)})
+            self.assertFalse(search_documents(settings, "backup marker before change", source_kind="obsidian"))
+            self.assertTrue(search_documents(restored_settings, "current live marker", source_kind="obsidian"))
+            note.write_text("# Restore\nbackup marker before change\n", encoding='utf-8')
             self.assertTrue(search_documents(settings, "backup marker before change", source_kind="obsidian"))
             self.assertFalse(search_documents(settings, "current live marker", source_kind="obsidian"))
-            self.assertTrue(search_documents(restored_settings, "current live marker", source_kind="obsidian"))
+            self.assertFalse(search_documents(restored_settings, "current live marker", source_kind="obsidian"))
 
     def test_document_open_is_post_only_and_same_origin(self) -> None:
         with self.temporary_directory() as temp:
@@ -4957,12 +4968,15 @@ aliases: ["Line\nBreak", "Quoted: \"Name\""]
                         (profile_row["absolute_path"], project_record["memory_document_id"]),
                     )
                     ambiguous_path = settings.knowledge_root / "projects" / "duplicate-profile" / "PROJECT_MEMORY.md"
+                    ambiguous_path.parent.mkdir(parents=True)
+                    ambiguous_path.write_bytes(Path(profile_row['absolute_path']).read_bytes())
                     db.execute(
                         """INSERT INTO documents (
                             source_kind, source_root, project_name, project_root_path, relative_path,
-                            absolute_path, path_key, title, category, indexed_at, last_seen_scan, status
+                            absolute_path, path_key, title, category, indexed_at, last_seen_scan, status,
+                            content_hash, size_bytes, mtime_ns
                         ) SELECT source_kind, source_root, project_name, project_root_path, ?, ?, ?, title,
-                            category, indexed_at, last_seen_scan, 'active'
+                            category, indexed_at, last_seen_scan, 'active', content_hash, size_bytes, mtime_ns
                             FROM documents WHERE document_id=?""",
                         (
                             "projects/duplicate-profile/PROJECT_MEMORY.md", str(ambiguous_path), path_key(ambiguous_path),

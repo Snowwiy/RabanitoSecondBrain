@@ -22,6 +22,97 @@ export function entityKindLabel(value) {
   return ENTITY_KIND_LABELS[kind] || kind.replaceAll('_', ' ') || 'Entidad';
 }
 
+const isNonNegativeSafeCount = value => Number.isSafeInteger(value) && value >= 0;
+const isPlainRecord = value => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+const scanCountText = value => isNonNegativeSafeCount(value) ? value.toLocaleString('es-MX') : '—';
+const scanCountPhrase = (value, singular, plural) => `${scanCountText(value)} ${value === 1 ? singular : plural}`;
+
+// HTTP 200 only confirms transport. These fields determine whether an index
+// attempt can be presented as a complete, fully covered synchronization.
+export function indexScanState(scan) {
+  const status = typeof scan?.status === 'string' ? scan.status.toLowerCase() : '';
+  const errorsValid = isNonNegativeSafeCount(scan?.errors);
+  const coverage = scan?.scan_coverage;
+  const guard = scan?.retirement_guard;
+  const coverageFields = ['expected_sources', 'attempted_sources', 'completed_sources', 'failed_sources', 'unprocessed_sources', 'incomplete_sources'];
+  const guardFields = ['proposed', 'withheld', 'unconfigured_documents_preserved', 'changed_source_identities'];
+  const coverageKnown = isPlainRecord(coverage) && typeof coverage.complete === 'boolean'
+    && coverageFields.every(key => isNonNegativeSafeCount(coverage[key]));
+  const guardKnown = isPlainRecord(guard) && guardFields.every(key => isNonNegativeSafeCount(guard[key]))
+    && ['not_required', 'review_required', 'approved', 'approval_rejected'].includes(guard.status)
+    && typeof guard.approval_applied === 'boolean' && typeof guard.scope_incomplete === 'boolean';
+  const coverageConsistent = coverageKnown
+    && coverage.completed_sources <= coverage.attempted_sources
+    && coverage.attempted_sources <= coverage.expected_sources
+    && coverage.failed_sources <= coverage.expected_sources
+    && coverage.incomplete_sources === coverage.expected_sources - coverage.completed_sources
+    && coverage.unprocessed_sources === coverage.expected_sources - coverage.attempted_sources;
+  const coverageComplete = coverageConsistent && coverage.complete === true && coverage.expected_sources > 0
+    && coverage.attempted_sources === coverage.expected_sources
+    && coverage.completed_sources === coverage.expected_sources
+    && coverage.failed_sources === 0 && coverage.unprocessed_sources === 0 && coverage.incomplete_sources === 0;
+  const sourceSummaryHasErrors = isPlainRecord(scan?.source_summary)
+    && Object.values(scan.source_summary).some(counts => isPlainRecord(counts) && isNonNegativeSafeCount(counts.errors) && counts.errors > 0);
+  const reviewRequired = guardKnown && (guard.status === 'review_required' || guard.status === 'approval_rejected'
+    || guard.withheld > 0 || guard.changed_source_identities > 0
+    || guard.unconfigured_documents_preserved > 0);
+  const guardAllowsComplete = guardKnown && ['not_required', 'approved'].includes(guard.status)
+    && (guard.status !== 'approved' || guard.approval_applied)
+    && guard.withheld === 0 && !guard.scope_incomplete
+    && guard.changed_source_identities === 0 && guard.unconfigured_documents_preserved === 0;
+  const complete = status === 'ok' && errorsValid && scan.errors === 0
+    && typeof scan.finished_at === 'string' && scan.finished_at.length > 0
+    && coverageComplete && guardAllowsComplete && !sourceSummaryHasErrors;
+  const details = [];
+  if (coverageKnown) {
+    if (coverage.failed_sources > 0) details.push(scanCountPhrase(coverage.failed_sources, 'fuente fallida', 'fuentes fallidas'));
+    if (coverage.unprocessed_sources > 0) details.push(scanCountPhrase(coverage.unprocessed_sources, 'fuente no procesada', 'fuentes no procesadas'));
+    if (coverage.incomplete_sources > 0) details.push(scanCountPhrase(coverage.incomplete_sources, 'fuente sin cobertura completa', 'fuentes sin cobertura completa'));
+  } else details.push('cobertura no confirmada');
+  if (guardKnown) {
+    if (guard.withheld > 0) details.push(`${guard.withheld} retiros retenidos; revisión manual requerida`);
+    else if (guard.status === 'review_required' || guard.status === 'approval_rejected') details.push('revisión manual requerida');
+    if (guard.scope_incomplete) details.push('alcance de fuentes incompleto');
+    if (guard.changed_source_identities > 0) details.push(scanCountPhrase(guard.changed_source_identities, 'identidad de fuente cambió', 'identidades de fuente cambiaron'));
+    if (guard.unconfigured_documents_preserved > 0) details.push(scanCountPhrase(guard.unconfigured_documents_preserved, 'documento conservado de una fuente no configurada', 'documentos conservados de fuentes no configuradas'));
+  } else details.push('estado de retiros no confirmado');
+  if (errorsValid && scan.errors > 0 && !sourceSummaryHasErrors) details.push(`${scan.errors} errores`);
+  if (sourceSummaryHasErrors && !details.some(item => item.includes('fuentes fallidas'))) details.push('errores de fuente');
+  let label;
+  if (complete) label = 'Completo confirmado';
+  else if (status === 'running') label = 'En curso';
+  else if (status === 'error' || status === 'failed') label = 'Falló';
+  else if (reviewRequired) label = 'Parcial · revisión manual requerida';
+  else if (coverageKnown && !coverageComplete) label = 'Parcial · cobertura incompleta';
+  else if (status === 'partial' || errorsValid && scan.errors > 0) label = 'Parcial · revisar fuentes';
+  else if (status === 'ok' && (!coverageKnown || !guardKnown)) label = 'No confirmado · faltan diagnósticos';
+  else if (status === 'ok') label = 'No confirmado · resultado incompleto';
+  else label = 'Estado desconocido';
+  return {status, complete, coverageKnown, guardKnown, reviewRequired, label, details};
+}
+
+export function indexScanMessage(scan) {
+  if (!scan) return 'Sin ejecución de indexación registrada.';
+  const outcome = indexScanState(scan);
+  const counts = `+${scanCountText(scan.added)} añadidos · ~${scanCountText(scan.modified)} modificados · =${scanCountText(scan.unchanged)} sin cambios · ${scanCountText(scan.removed)} retiros reportados · ${scanCountText(scan.errors)} errores`;
+  const sentence = outcome.complete ? 'Sincronización completa confirmada.'
+    : outcome.status === 'error' || outcome.status === 'failed' ? 'La indexación falló.'
+      : outcome.reviewRequired ? 'La indexación requiere revisión humana; no se aprobaron retiros automáticamente.'
+        : outcome.status === 'partial' ? 'La indexación quedó parcial.'
+          : 'La sincronización no está confirmada como completa.';
+  const details = outcome.details.length ? ` ${outcome.details.join('; ')}.` : '';
+  return `${sentence} ${counts}.${details}`;
+}
+
+export function lastCompleteIndexMessage(value) {
+  if (!isPlainRecord(value) || !Number.isSafeInteger(value.scan_id) || value.scan_id <= 0
+      || typeof value.started_at !== 'string' || !value.started_at
+      || typeof value.finished_at !== 'string' || !value.finished_at) {
+    return 'Sin registro de una indexación completa confirmada.';
+  }
+  return `Última indexación completa confirmada: ${value.finished_at.slice(0, 40)} · ejecución #${value.scan_id}.`;
+}
+
 // Pure projections are exported so the real frontend behavior can be tested without a live index.
 export function normalizeCommandGraph(payload) {
   const typed = Number(payload?.schema_version) === 1;
@@ -780,12 +871,12 @@ export function startCommandCenter(doc, fetcher = fetch) {
       }));
       byId('ncExplorerCount').textContent = `${safeCount(stats.documents_active)} docs`;
       const scan = stats.latest_scan;
-      const errors = Number(scan?.errors);
-      const complete = scan?.status === 'ok' && Number.isSafeInteger(errors) && errors === 0;
-      const partial = scan?.status === 'partial' || scan?.status === 'ok' && Number.isSafeInteger(errors) && errors > 0;
-      const attempt = scan ? `${complete ? 'Última ejecución completa' : partial ? 'Última ejecución parcial' : scan.status === 'running' ? 'Indexación en curso' : scan.status === 'error' || scan.status === 'failed' ? 'Última ejecución fallida' : 'Resultado de indexación no confirmado'} · ${String(scan.finished_at || scan.started_at || 'fecha no disponible').slice(0, 16)}` : 'Sin ejecución de indexación registrada';
+      const outcome = indexScanState(scan);
+      const attempt = scan ? `${outcome.label} · ${String(scan.finished_at || scan.started_at || 'fecha no disponible').slice(0, 40)}` : 'Sin ejecución de indexación registrada';
       const sourceErrors = Object.entries(scan?.source_summary || {}).filter(([kind, counts]) => /^[a-z][a-z0-9_-]{0,31}$/.test(kind) && Number.isSafeInteger(counts?.errors) && counts.errors > 0).map(([kind, counts]) => `${kind} (${safeCount(counts.errors)})`).slice(0, 8);
-      byId('ncIndexStatus').textContent = `${attempt}${sourceErrors.length ? ` · Fuentes con error: ${sourceErrors.join(', ')}` : ''} · La API actual no informa retiros retenidos ni revisión manual.`;
+      const lastComplete = lastCompleteIndexMessage(stats.last_complete_scan);
+      const detail = scan && outcome.details.length ? ` · ${outcome.details.join('; ')}` : '';
+      byId('ncIndexStatus').textContent = `${attempt}${detail}${sourceErrors.length ? ` · Fuentes con error: ${sourceErrors.join(', ')}` : ''} · ${lastComplete}`;
       byId('ncGraphCount').textContent = `Índice · ${safeCount(stats.documents_active)} documentos · ${safeCount(stats.relations_resolved)} relaciones · ${attempt}`;
     } catch { byId('ncIndexStatus').textContent = 'No se pudieron leer estadísticas locales ni el estado de indexación.'; byId('ncGraphCount').textContent = 'No se pudieron leer estadísticas locales.'; }
   }

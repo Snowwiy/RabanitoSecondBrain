@@ -189,7 +189,8 @@ class KnowledgeGraphTests(unittest.TestCase):
         path.write_text(path.read_text(encoding="utf-8") + "\nUnindexed change\n", encoding="utf-8")
         page = graph_page(self.settings, kind="solution", project=str(self.alpha))
         self.assertEqual(page["nodes"], [])
-        self.assertEqual(page["coverage"]["unverifiable_solutions_skipped"], 1)
+        self.assertEqual(page["coverage"]["unverifiable_solutions_skipped"], 0)
+        self.assertTrue(page['coverage']['requires_sync'])
 
     def test_saved_inventory_candidates_and_review_claims_never_become_confirmed_vulnerability(self):
         self.seed(); self.sync()

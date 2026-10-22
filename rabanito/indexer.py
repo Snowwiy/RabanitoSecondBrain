@@ -21,6 +21,7 @@ from urllib.parse import unquote, urlsplit
 from .config import SETTINGS_WRITE_LOCK, Settings, set_additional_source_enabled
 from .db import Database
 from .parsing import ParsedDocument, parse_frontmatter, parse_markdown
+from .source_files import open_source, read_source, read_text as read_source_text, remember_identity, _regular as require_regular_file
 from .utils import contains_reparse_component, iso_now, path_key, redact_sensitive_lines, safe_relative, sha256_text, slugify, write_json_atomic, write_text_atomic
 
 
@@ -178,7 +179,7 @@ def _existing_source_file(root: Path, relative_path: str) -> Path | None:
                 return None
             final = index == len(parts) - 1
             if final:
-                return current if stat.S_ISREG(metadata.st_mode) else None
+                return current if stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1 else None
             if not stat.S_ISDIR(metadata.st_mode):
                 return None
     except OSError:
@@ -428,7 +429,7 @@ def _excluded_project_memory(settings: Settings, path: Path, project_statuses: d
     if area == "decisions" and path.suffix.casefold() != ".md":
         return False
     try:
-        frontmatter, _ = parse_frontmatter(path.read_text(encoding="utf-8", errors="replace").splitlines()[:40])
+        frontmatter, _ = parse_frontmatter(read_source_text(path).splitlines()[:40])
     except OSError:
         return False
     project_name = str(frontmatter.get("project", "")).casefold()
@@ -571,7 +572,7 @@ def _project_dependencies(
         if safe_path is None:
             continue
         try:
-            with safe_path.open("rb") as stream:
+            with open_source(safe_path) as stream:
                 raw_content = stream.read(max_bytes + 1)
             if len(raw_content) > max_bytes:
                 dependency_errors.append({"source": relative, "error_type": "FileTooLarge"})
@@ -664,7 +665,7 @@ def _project_readme_overview(project_root: Path, docs: list[str]) -> dict[str, A
     try:
         if path.stat().st_size > 2_097_152:
             return None
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = read_source_text(path).splitlines()
     except OSError:
         return None
     _frontmatter, body_offset = parse_frontmatter(lines)
@@ -742,7 +743,7 @@ def _project_document_outline(
         try:
             if path.stat().st_size > max(1, max_bytes):
                 continue
-            lines = path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+            lines = read_source_text(path, max(1, max_bytes)).splitlines()
         except OSError:
             continue
         _frontmatter, body_offset = parse_frontmatter(lines)
@@ -848,7 +849,7 @@ def _project_document_evidence(
             file_size = path.stat().st_size
             if file_size > max(1, max_bytes) or scanned_bytes + file_size > max(1, max_total_bytes):
                 continue
-            lines = path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+            lines = read_source_text(path, max(1, max_bytes)).splitlines()
         except OSError:
             continue
         scanned_bytes += file_size
@@ -1025,7 +1026,7 @@ def _project_document_validation_procedures(
             file_size = path.stat().st_size
             if file_size > max(1, max_bytes) or scanned_bytes + file_size > max(1, max_total_bytes):
                 continue
-            lines = path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+            lines = read_source_text(path, max(1, max_bytes)).splitlines()
         except OSError:
             continue
         scanned_bytes += file_size
@@ -1920,12 +1921,14 @@ def _index_all_impl(settings: Settings, force: bool = False, approve_retirements
             decision_folder = f"{slugify(str(row['name']))}-{sha256_text(path_key(project_root))[:8]}"
             project_statuses[f"decision:{decision_folder.casefold()}"] = status
         scan_id = int(db.execute("INSERT INTO scan_runs(started_at, status) VALUES(?,?)", (started, "running")).lastrowid)
+        stats['scan_id'] = scan_id
         for source in iter_source_files(settings, project_info, scan_state, project_statuses):
             stats["files_seen"] += 1
             source_summary = stats["source_summary"].setdefault(source.kind, {"seen": 0, "added": 0, "modified": 0, "unchanged": 0, "skipped": 0, "errors": 0})
             source_summary["seen"] += 1
             try:
-                stat = source.path.stat()
+                stat = source.path.lstat()
+                require_regular_file(stat)
                 key = path_key(source.path)
                 existing = db.one(
                     "SELECT document_id, size_bytes, mtime_ns, content_hash, status, project_name, project_root_path "
@@ -1948,11 +1951,15 @@ def _index_all_impl(settings: Settings, force: bool = False, approve_retirements
                     and existing["project_name"] == source.project_name
                     and existing["project_root_path"] == source.project_root_path
                 )
-                raw_text = None
+                # Both first indexing and the unchanged fast path use the same
+                # pinned single-link reader. No path.read_text fallback.
+                raw_text, read_info = read_source(source.path, max_bytes)
+                if (stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns) != (read_info.st_dev,read_info.st_ino,read_info.st_size,read_info.st_mtime_ns):
+                    raise OSError('source_changed_during_read')
                 if unchanged_metadata:
-                    raw_text = source.path.read_text(encoding="utf-8-sig", errors="replace")
                     if sha256_text(raw_text) == existing["content_hash"]:
                         db.execute("UPDATE documents SET last_seen_scan=? WHERE document_id=?", (started, existing["document_id"]))
+                        remember_identity(db, existing['document_id'], read_info, existing['content_hash'])
                         stats["unchanged"] += 1
                         source_summary["unchanged"] += 1
                         continue
@@ -1965,6 +1972,7 @@ def _index_all_impl(settings: Settings, force: bool = False, approve_retirements
                         db.execute("UPDATE documents SET last_seen_scan=? WHERE document_id=?", (started, existing["document_id"]))
                     continue
                 document_id = _upsert_document(db, source, parsed, started, stat)
+                remember_identity(db, document_id, read_info, parsed.content_hash)
                 if existing is None:
                     _record_document_change(db, scan_id, document_id, "added", "new_document", started)
                 elif existing["status"] != "active":
@@ -2023,6 +2031,13 @@ def _index_all_impl(settings: Settings, force: bool = False, approve_retirements
             else "partial" if has_failures
             else "ok"
         )
+        db.execute('INSERT INTO meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+                   ('index_scan_report:' + str(scan_id), json.dumps({'scan_id':scan_id,
+                        'scan_coverage':coverage, 'retirement_guard':guard})))
+        if stats['status'] == 'ok' and coverage['complete'] and not guard['withheld']:
+            db.execute("INSERT INTO meta(key,value) VALUES('index_last_complete_scan',?) "
+                       "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (json.dumps({
+                           'confirmation_version':1, 'scan_id':scan_id, 'started_at':started, 'finished_at':finished}),))
         db.execute(
             """UPDATE scan_runs SET finished_at=?, status=?, files_seen=?, added=?, modified=?, unchanged=?, removed=?, skipped=?, errors=?, source_summary_json=? WHERE scan_id=?""",
             (finished, stats["status"], stats["files_seen"], stats["added"], stats["modified"], stats["unchanged"], stats["removed"], stats["skipped"], stats["errors"], json.dumps(stats["source_summary"], ensure_ascii=False), scan_id),

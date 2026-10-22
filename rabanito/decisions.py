@@ -277,6 +277,8 @@ def list_memory_records(
         f"rabanito_project_visible(d.source_kind,{visibility_project},{visibility_root},d.source_root)=1"
     )
     where.append('rabanito_document_eligible(d.source_kind,d.relative_path)=1')
+    from .source_files import file_visibility_sql
+    where.append(file_visibility_sql('d'))
     if record_type:
         where.append(f"rabanito_casefold({fm_type})=?")
         params.append(record_type.casefold())

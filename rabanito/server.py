@@ -5,6 +5,7 @@ import ipaddress
 import os
 import re
 import sqlite3
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -32,10 +33,68 @@ from .search import (
 )
 from .utils import contains_reparse_component, path_key, safe_relative
 from .visibility import project_visibility_sql, register_project_visibility
+from .scan_status import attach_report, last_complete_scan
+
+
+class _DeadlineHeaders:
+    """Bound the entire header phase, not only inactivity between bytes."""
+    def __init__(self, stream, connection, timeout):
+        self.stream, self.connection = stream, connection
+        self.deadline = time.monotonic() + timeout
+
+    def readline(self, limit=-1):
+        line = bytearray()
+        while limit < 0 or len(line) < limit:
+            remaining = self.deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('request_headers_timeout')
+            self.connection.settimeout(remaining)
+            part = self.stream.read(1)
+            if not part:
+                break
+            line.extend(part)
+            if part == b'\n':
+                break
+        return bytes(line)
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
 
 
 class RabanitoHandler(BaseHTTPRequestHandler):
     settings: Settings
+    request_read_timeout = 3.0
+
+    def setup(self):
+        super().setup()
+        # Also bound an idle accepted socket/header read, before routing.
+        self.connection.settimeout(self.request_read_timeout)
+        self.rfile = _DeadlineHeaders(self.rfile, self.connection, self.request_read_timeout)
+
+    def _read_request_body(self, length, *, timeout=None):
+        timeout = self.request_read_timeout if timeout is None else min(timeout, self.request_read_timeout)
+        deadline = time.monotonic() + timeout
+        previous_timeout = self.connection.gettimeout()
+        parts, remaining = [], length
+        try:
+            while remaining:
+                budget = deadline - time.monotonic()
+                if budget <= 0:
+                    raise TimeoutError
+                self.connection.settimeout(budget)
+                read = getattr(self.rfile, 'read1', self.rfile.read)
+                part = read(remaining)
+                if not part:
+                    raise DocumentContentError(400, 'incomplete_request_body')
+                parts.append(part)
+                remaining -= len(part)
+            return b''.join(parts)
+        except TimeoutError:
+            raise DocumentContentError(408, 'request_body_timeout') from None
+        except OSError:
+            raise DocumentContentError(400, 'incomplete_request_body') from None
+        finally:
+            self.connection.settimeout(previous_timeout)
 
     def log_message(self, format: str, *args) -> None:
         # Never log request paths or query strings: they can contain private search terms.
@@ -51,7 +110,10 @@ class RabanitoHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(raw)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(raw)
+        try:
+            self.wfile.write(raw)
+        except OSError:
+            self.close_connection = True  # A disconnected malformed client is not a server fault.
 
     def _document_content_request(self, parsed) -> None:
         # Isolated parsing keeps the established API contracts unchanged.
@@ -67,8 +129,8 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                 previous_timeout = self.connection.gettimeout()
                 try:
                     self.connection.settimeout(1)
-                    self.rfile.read(int(lengths[0]))
-                except OSError:
+                    self._read_request_body(int(lengths[0]), timeout=1)
+                except (OSError, DocumentContentError):
                     pass
                 finally:
                     self.connection.settimeout(previous_timeout)
@@ -103,13 +165,8 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                 raise DocumentContentError(413, "request_size_limit")
             if not length:
                 raise DocumentContentError(400, "invalid_document_request")
-            old_timeout = self.connection.gettimeout()
-            try:
-                self.connection.settimeout(3)
-                body_consumed = True
-                body = self.rfile.read(length)
-            finally:
-                self.connection.settimeout(old_timeout)
+            body_consumed = True
+            body = self._read_request_body(length)
             if len(body) != length:
                 raise DocumentContentError(400, "incomplete_request_body")
             def unique_fields(pairs):
@@ -322,7 +379,9 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                            FROM scan_runs ORDER BY scan_id DESC LIMIT 30""",
                         (SCAN_SOURCE_SUMMARY_MAX_CHARS + 1,),
                     )]
-                self._json({"scans": [self._dashboard_scan_summary(scan) for scan in scans]})
+                    scans = [attach_report(db, scan) for scan in scans]
+                    confirmed = last_complete_scan(db)
+                self._json({"scans": [self._dashboard_scan_summary(scan) for scan in scans], 'last_complete_scan':confirmed})
                 return
             if path == "/api/changes":
                 raw_limit = query.get("limit", ["50"])[0]
@@ -498,6 +557,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
             self._json({"error": f"request failed: {type(exc).__name__}"}, 400)
 
     def do_POST(self) -> None:
+        self.close_connection = True  # No pipelining of ambiguous/trailing bodies.
         parsed = urlparse(self.path)
         if parsed.path == "/api/doc/content":
             self._document_content_request(parsed)
@@ -521,10 +581,12 @@ class RabanitoHandler(BaseHTTPRequestHandler):
             return
         origin = self.headers.get("Origin", "")
         content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip().casefold()
-        try:
-            content_length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            content_length = -1
+        lengths = self.headers.get_all('Content-Length', [])
+        if (len(lengths) > 1 or self.headers.get_all('Transfer-Encoding', [])
+                or lengths and not re.fullmatch(r'[0-9]{1,10}', lengths[0])):
+            self._json({'error':'invalid_request_framing'}, 400)
+            return
+        content_length = int(lengths[0]) if lengths else 0
         try:
             origin_url = urlparse(origin)
             same_loopback_origin = (
@@ -534,8 +596,18 @@ class RabanitoHandler(BaseHTTPRequestHandler):
         except ValueError:
             same_loopback_origin = False
         max_body_length = 16_384 if parsed.path in {"/api/search", "/api/context", "/api/decisions", "/api/graph", "/api/knowledge-graph", "/api/knowledge-graph/neighbors"} else 2048
-        if not same_loopback_origin or content_type != "application/json" or not 0 <= content_length <= max_body_length:
+        if (len(self.headers.get_all('Host', [])) != 1 or len(self.headers.get_all('Origin', [])) != 1
+                or len(self.headers.get_all('Content-Type', [])) != 1
+                or not same_loopback_origin or content_type != "application/json"):
             self._json({"error": "same-origin JSON request required"}, 403)
+            return
+        if content_length > max_body_length:
+            self._json({'error':'request_size_limit'}, 413)
+            return
+        try:
+            raw_payload = self._read_request_body(content_length) or b'{}'
+        except DocumentContentError as exc:
+            self._json({'error':exc.code}, exc.status)
             return
         try:
             def unique_graph_fields(pairs):
@@ -545,7 +617,6 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                         raise ValueError("duplicate_graph_json_key")
                     result[key] = value
                 return result
-            raw_payload = self.rfile.read(content_length) or b"{}"
             if parsed.path.startswith("/api/knowledge-graph") and (parsed.query or parsed.params or parsed.fragment):
                 raise ValueError("invalid_graph_request_url")
             payload = json.loads(raw_payload, object_pairs_hook=unique_graph_fields) if parsed.path.startswith(("/api/knowledge-graph", "/api/attack/")) or parsed.path == "/api/coding/documented" else json.loads(raw_payload)
@@ -926,7 +997,7 @@ class RabanitoHandler(BaseHTTPRequestHandler):
             row = db.one(
                 "SELECT absolute_path, source_kind, source_root, project_root_path, status "
                 "FROM documents d WHERE document_id=? AND "
-                + project_visibility_sql("d"),
+                + project_visibility_sql("d", live_file=False),
                 (document_id,),
             )
         if not row or row["status"] != "active":
@@ -960,6 +1031,10 @@ class RabanitoHandler(BaseHTTPRequestHandler):
                 and path.is_file()
                 and safe_relative(resolved_path, source_root) is not None
             )
+            if safe_path:
+                from .source_files import open_source
+                with open_source(path):
+                    pass
         except (OSError, RuntimeError, ValueError):
             safe_path = False
         if not safe_path:

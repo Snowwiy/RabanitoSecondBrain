@@ -109,11 +109,17 @@ class SourceAuthorizationTests(unittest.TestCase):
         self.assertEqual([r['document_id'] for r in restored], [self.document_id])
         self.assertEqual(stats(changed)['latest_scan']['scan_id'], stats(self.settings)['latest_scan']['scan_id'])
 
-    def test_authorized_but_unavailable_root_keeps_offline_cache(self):
+    def test_unavailable_root_retains_but_does_not_expose_unverifiable_cache(self):
+        original = self.note.read_bytes()
         self.note.unlink()  # Own synthetic source only, never the real vault.
         self.settings.vault_root.rmdir()
-        self.assertTrue(search_documents(self.settings, 'ScopeMarker'))
-        self.assertTrue(retrieve_context(self.settings, 'ScopeMarker', max_chars=200)['fragments'])
+        self.assertEqual(search_documents(self.settings, 'ScopeMarker'), [])
+        self.assertEqual(retrieve_context(self.settings, 'ScopeMarker', max_chars=200)['fragments'], [])
+        with Database(self.settings.database_path, query_only=True) as db:
+            self.assertEqual(db.one('SELECT count(*) FROM documents_fts')[0], 1)
+        self.settings.vault_root.mkdir()
+        self.note.write_bytes(original)
+        self.assertEqual(search_documents(self.settings, 'ScopeMarker')[0]['document_id'], self.document_id)
 
     def test_authorized_sibling_root_does_not_authorize_old_prefix(self):
         self.assertEqual(search_documents(self.changed(vault_root='vault-next'), 'ScopeMarker'), [])

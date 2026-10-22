@@ -1,6 +1,45 @@
 # UI integration plan
 
+## H1–H6 backend/frontend synchronization (2026-10-22)
+
+- Starting refs were verified after `git fetch origin`: `origin/main` at
+  `0f5c12185fd4b4de07fe16ed3d008edce428f58e`, `origin/integration/rabanito-3.0`
+  at `4f71ee3e5da98b3e28f3ace33a2aea710931b50f`, and `origin/Frontend-Design`
+  at `39b572f28dc6f60915d44bc8b6ad790f78d1c386`. The integration worktree was
+  clean. The Frontend-Design worktree already had three local documentation
+  edits; those files and that worktree were left untouched.
+- Merged `origin/main` into the isolated integration branch. Two conflicts were
+  resolved file-by-file:
+
+| File | Sol/backend behavior retained | Integration/frontend behavior retained |
+|---|---|---|
+| `rabanito/knowledge_graph/query.py` | Live filesystem and authorization checks on every indexed source before a clean proof is used | The persisted projection proof remains a fast path only when the live source checks all pass; normal fingerprint fallback remains |
+| `rabanito/server.py` | Absolute HTTP header/body deadlines, framing rejection, bounded JSON reads, safe writes and latest scan diagnostics | Knowledge Graph URLs still reject query/params/fragments; the old duplicate body read was removed in favor of the bounded reader |
+
+- H1 hard-link/file identity protections, H5 framing/timeouts, H6 atomic document
+  migrations/recovery, and the additive H2 `scan_coverage`, `retirement_guard`
+  and `last_complete_scan` contract come from the published backend commit and
+  its focused tests. The integration frontend now consumes the real H2 fields;
+  it does not treat HTTP 200 as success or infer state from removed/skipped
+  counts. A full green state requires verified complete coverage and no pending
+  retirement guard conditions. Retained withdrawals call for manual review;
+  the UI cannot approve them.
+- H3 and H4 remain intact: stale Inspector responses are generation-guarded;
+  typed graph paging stops at its visual caps or without progress and retains
+  the cursor semantics. No operational DB, backup, Obsidian file, original
+  project or other worktree was opened for this phase.
+- El incidente previo de `data/rabanito.db` sigue sin causa/recuperación atribuida
+  y no forma parte de esta integración; no se abrió ni modificó esa base o su
+  respaldo. La base afectada no queda certificada como recuperada.
+- Automated validation and the remaining visual-tool limitation are recorded in
+  `UI_TEST_RESULTS.md`. The integration branch is the sole publication target;
+  the next activity is an independent Astra audit, not another implementation
+  cycle.
+
 ## Coherencia de indexación, Inspector y paginación (2026-10-22)
+
+> Historical checkpoint: its H2 contract blocker was resolved by the H1–H6
+> synchronization section above.
 
 - H3 corregido en el Inspector: contexto tardío ya no puede reemplazar fragmentos ni estados del documento actual; metadatos, fragmentos, relaciones, contexto y expansión tipada quedan vinculados a la selección vigente.
 - H4 corregido en el Knowledge Graph: evita lecturas posteriores sin capacidad, cursor repetido/vacío o páginas sin progreso; distingue candidatos de entidades cargadas y mantiene el límite de representación de 1,000 nodos/4,000 relaciones.

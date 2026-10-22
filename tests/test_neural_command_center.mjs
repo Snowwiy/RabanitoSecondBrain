@@ -10,7 +10,7 @@ const createRequestGate = () => { let n=0; return {begin:()=>++n,current:id=>id=
 const requestJson = async () => ({});
 const safeReference = value => { try { const url = new URL(value); return ['https:','http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null; } catch { return null; } };
 `;
-const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, safeGraphCitation, mergeBoundedTypedGraph, typedPageContinuation, typedPageLimit, typedPageStopReason, canRequestTypedPage, TYPED_GRAPH_MAX_NODES, TYPED_GRAPH_MAX_EDGES, openAuthorizedSource, groupCommandNodes, explicitAdjacency, detectGraphCommunities, parseSafeMarkdown, validateMarkdownResponse, entityKindLabel};').toString('base64')}`);
+const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, safeGraphCitation, mergeBoundedTypedGraph, typedPageContinuation, typedPageLimit, typedPageStopReason, canRequestTypedPage, TYPED_GRAPH_MAX_NODES, TYPED_GRAPH_MAX_EDGES, openAuthorizedSource, groupCommandNodes, explicitAdjacency, detectGraphCommunities, parseSafeMarkdown, validateMarkdownResponse, entityKindLabel, indexScanState, indexScanMessage, lastCompleteIndexMessage};').toString('base64')}`);
 const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 
 test('normalization keeps only real graph endpoints and preserves suggested relation state', () => {
@@ -24,6 +24,52 @@ test('normalization keeps only real graph endpoints and preserves suggested rela
   assert.equal(graph.edges[0].relation_type, 'wikilink');
   assert.equal(graph.nodes[2].title, '<script>dato</script>');
   assert.equal(graph.totalMatches, 3);
+});
+
+test('index outcome requires verified source coverage and a clear retirement guard', () => {
+  const diagnostics = {
+    scan_coverage: {
+      expected_sources: 3, attempted_sources: 3, completed_sources: 3,
+      failed_sources: 0, unprocessed_sources: 0, incomplete_sources: 0, complete: true,
+    },
+    retirement_guard: {
+      proposed: 0, withheld: 0, unconfigured_documents_preserved: 0, changed_source_identities: 0,
+      status: 'not_required', approval_applied: false, scope_incomplete: false,
+    },
+  };
+  const complete = {
+    status: 'ok', errors: 0, finished_at: '2026-10-22T11:00:00Z', added: 2, modified: 0,
+    unchanged: 8, removed: 0, ...diagnostics,
+  };
+  assert.equal(ui.indexScanState(complete).complete, true);
+  assert.match(ui.indexScanMessage(complete), /^Sincronización completa confirmada\./);
+
+  const massRetirementBlocked = {
+    ...complete, status: 'partial', scan_coverage: {...diagnostics.scan_coverage},
+    retirement_guard: {...diagnostics.retirement_guard, proposed: 338, withheld: 338, status: 'review_required'},
+  };
+  assert.equal(ui.indexScanState(massRetirementBlocked).complete, false);
+  assert.match(ui.indexScanMessage(massRetirementBlocked), /revisión humana/);
+  assert.match(ui.indexScanMessage(massRetirementBlocked), /338 retiros retenidos/);
+  assert.match(ui.indexScanMessage(massRetirementBlocked), /no se aprobaron retiros automáticamente/);
+
+  const inaccessibleSource = {
+    ...complete, status: 'partial', errors: 1,
+    scan_coverage: {
+      expected_sources: 3, attempted_sources: 3, completed_sources: 2,
+      failed_sources: 1, unprocessed_sources: 0, incomplete_sources: 1, complete: false,
+    },
+    source_summary: {obsidian: {errors: 1}},
+  };
+  assert.equal(ui.indexScanState(inaccessibleSource).complete, false);
+  assert.match(ui.indexScanMessage(inaccessibleSource), /1 fuente fallida/);
+  assert.match(ui.indexScanMessage(inaccessibleSource), /1 fuente sin cobertura completa/);
+
+  const legacyOk = {status: 'ok', errors: 0, finished_at: '2026-10-22T10:00:00Z'};
+  assert.equal(ui.indexScanState(legacyOk).complete, false);
+  assert.match(ui.indexScanState(legacyOk).label, /faltan diagnósticos/);
+  assert.equal(ui.lastCompleteIndexMessage({scan_id: 7, started_at: 'start', finished_at: 'finish'}), 'Última indexación completa confirmada: finish · ejecución #7.');
+  assert.match(ui.lastCompleteIndexMessage(null), /Sin registro/);
 });
 
 test('typed Knowledge Graph retains stable entity IDs, provenance, citation safety and relation classes', () => {

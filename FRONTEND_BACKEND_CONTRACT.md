@@ -115,25 +115,39 @@ el mismo origen loopback; no se habilita CORS para unir worktrees.
 
 `GET /api/stats` (`latest_scan`), `GET /api/scans` y `POST /api/index` reutilizan
 la proyección compacta de `project_scan_summary()`: `status`, `errors`, marcas
-de tiempo, contadores y `source_summary` acotado. `HTTP 200` por sí solo no
-significa que el ciclo haya terminado correctamente. El frontend considera una
-ejecución completa solo si `status` es `ok`, `errors` es cero y existe
-`finished_at`; `partial`, `error`, `failed`, `running` o campos faltantes se
-presentan como parciales, fallidos, en curso o no confirmados. Los errores por
-fuente se muestran usando las claves y contadores sanitizados del resumen, sin
-inferir que una fuente concreta esté inaccesible cuando el contrato solo dice
-que tuvo errores.
+de tiempo, contadores, `source_summary` acotado y los subconjuntos validados de
+`scan_coverage` y `retirement_guard`. HTTP 200 solo confirma el transporte.
 
-El historial de `/api/scans` está limitado a diez resultados recientes. La UI
-puede identificar la última ejecución completa dentro de esa ventana, pero si no
-aparece una no afirma que nunca haya existido; si falla la lectura del historial,
-la UI lo reporta como no consultable y no como ausencia. La proyección HTTP no expone
-`scan_coverage` ni `retirement_guard`; por tanto no permite indicar el conteo de
-retiros retenidos ni si una revisión manual está pendiente. El dashboard señala
-explícitamente esa ausencia. Completar H2 requiere que el contrato de Sol publique
-campos sanitizados para cobertura, estado de la protección, retiros retenidos y
-revisión requerida. No se deben inferir ni inventar esos valores a partir de
-`removed`, `skipped`, `errors` o `status`.
+El dashboard considera completa una ejecución únicamente cuando `status=ok`,
+`errors=0`, existe `finished_at`, la cobertura indica `complete=true` con todas
+las fuentes esperadas/completadas y sin fallidas, sin procesar o incompletas, y
+el guard informa estado `not_required` o `approved` sin retiros retenidos,
+alcance incompleto, identidades cambiadas ni documentos preservados de fuentes
+no configuradas. Un estado `approved` debe traer `approval_applied=true`. La UI
+no crea ni envía aprobaciones y nunca recomienda un reintento con force.
+
+`status=partial`, errores, fuentes inaccesibles, cobertura incompleta, retiros
+retenidos, `review_required`/`approval_rejected`, campos faltantes o diagnósticos
+malformados se muestran como parcial, fallo, revisión humana requerida o estado
+no confirmado. Se presentan los contadores permitidos para cobertura y retiros;
+los errores agregados de `source_summary` no se convierten en una explicación de
+permisos ni exponen raíces privadas. No inferir estos estados de `removed`,
+`skipped`, `errors` ni del código HTTP.
+
+`GET /api/stats` y `GET /api/scans` devuelven `last_complete_scan`, una marca
+confirmada y enlazada a su fila de bitácora/cobertura. El dashboard la conserva
+como la última sincronización completa confirmada aunque el intento actual sea
+parcial o falle; `null` se presenta como “sin registro confirmado”, no como
+prueba de que nunca existió una ejecución. `/api/scans` puede devolver hasta 30
+filas; la UI presenta diez. Los historiales `ok` antiguos sin diagnósticos no se
+promueven retroactivamente a completos.
+
+El contrato aditivo está descrito con sus invariantes y límites en
+[`docs/SCAN_OUTCOMES.md`](docs/SCAN_OUTCOMES.md). La implementación del dashboard
+está en `web/knowledge.js` y en el panel heredado de `web/index.html`; las pruebas
+con datos sintéticos cubren retiros masivos retenidos, fuentes inaccesibles,
+respuestas HTTP 200 parciales, estados heredados sin cobertura y la persistencia
+de la última marca completa.
 
 ### Protección de respuestas asíncronas del Inspector y páginas del grafo
 

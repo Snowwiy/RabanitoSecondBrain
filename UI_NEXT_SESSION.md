@@ -1,6 +1,17 @@
 # UI next session checkpoint
 
-## Checkpoint H2/H3/H4 (2026-10-22)
+## Checkpoint final H1–H6 (2026-10-22)
+
+- Rama y worktree: `integration/rabanito-3.0`, `G:\Hermes\Memoria\Rabanito-SecondBrain-Integration`. Inicio verificado en `4f71ee3e5da98b3e28f3ace33a2aea710931b50f`; después de `git fetch origin`, `origin/main` estaba en `0f5c12185fd4b4de07fe16ed3d008edce428f58e`, `origin/Frontend-Design` en `39b572f28dc6f60915d44bc8b6ad790f78d1c386`. Frontend-Design tenía ediciones locales de tres documentos y no fue modificado.
+- El merge backend quedó listo en este worktree; conflictos de `rabanito/server.py` y `rabanito/knowledge_graph/query.py` resueltos y documentados en `UI_INTEGRATION_PLAN.md`. La consulta KG conserva las revisiones vivas de archivo antes de usar el proof persistente.
+- H1, H5, H6 integrados y con pruebas focalizadas; H3/H4 se conservan y H2 ya consume cobertura, guard de retiros y última indexación completa confirmada. El contrato y las reglas están en `FRONTEND_BACKEND_CONTRACT.md` y `docs/SCAN_OUTCOMES.md`.
+- Suite Python completa: **1,097 ejecutadas, 1,095 aprobadas, 2 omitidas, 0 fallidas**. Suite JavaScript: **97 aprobadas, 0 fallidas**. Pruebas focalizadas H1/H2/H3/H4/H5/H6/KG: **83 ejecutadas, 82 aprobadas, 1 omitida**. No se usó la DB operativa, el respaldo ni fuentes originales.
+- QA visual actual no ejecutada: runtime Jev requerido no disponible; no se sustituyó por otro controlador. El nuevo mensaje H2 debe revisarse en navegador. Narrator y FPS/heap browser-side siguen pendientes; la suite automatizada de UI y las evidencias visuales históricas no suplen esas comprobaciones.
+- Publicar el merge commit y cambios H2 solo después de la revisión final de diff/secretos, exclusivamente a `origin/integration/rabanito-3.0`; confirmar SHA con `git ls-remote`. No modificar/pushear a `main` o `Frontend-Design`.
+- El incidente de `data/rabanito.db` sigue siendo independiente y sin atribución/resolución. No abrir, indexar, restaurar ni limpiar esa base o su respaldo; la recuperación requerirá autorización y una fase separada.
+- La siguiente actividad será la segunda auditoría independiente de Astra. Al concluir la publicación de esta fase, detener desarrollo: no iniciar una nueva implementación autónoma.
+
+## Checkpoint H2/H3/H4 — histórico, supersedido por H1–H6 (2026-10-22)
 
 - Rama/worktree: `integration/rabanito-3.0`, `G:\Hermes\Memoria\Rabanito-SecondBrain-Integration`; base al iniciar `e80a63aa540fe3ba99dc8f03b6c08de141969701`. `origin/main` se consultó con fetch (`2f20e6e65e5fd8a2f09ab199321f74de5434099a`); no se fusionó ni editó. `origin/Frontend-Design` no se modificó.
 - La implementación H2/H3/H4 está publicada como `677e02c8ff83cee2381c09d94888282fd2dcdf6f` y el remoto se verificó con `git ls-remote`.

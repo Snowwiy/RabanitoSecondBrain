@@ -11,6 +11,7 @@ from .config import Settings
 from .db import Database
 from .utils import path_key
 from .visibility import project_visibility_sql, register_project_visibility
+from .scan_status import attach_report, last_complete_scan, public_diagnostics
 
 
 TOKEN_RE = re.compile(r"[\wÀ-ÿ][\wÀ-ÿ./:-]*", re.UNICODE)
@@ -88,6 +89,7 @@ def project_scan_summary(scan: dict[str, Any]) -> dict[str, Any]:
     result = {key: scan[key] for key in keys if key in scan}
     result["source_summary"] = safe_source_summary
     result["source_summary_truncated"] = source_summary_truncated
+    result.update(public_diagnostics(scan))
     return result
 
 
@@ -450,7 +452,7 @@ def stats(settings: Settings, latest_scan_source_summary_limit: int | None = Non
             f"SELECT COUNT(*) AS count FROM documents d WHERE d.status='active' AND {visible_document}"
         )["count"]
         deleted = db.one(
-            f"SELECT COUNT(*) AS count FROM documents d WHERE d.status='deleted' AND {visible_document}"
+            f"SELECT COUNT(*) AS count FROM documents d WHERE d.status='deleted' AND {project_visibility_sql('d', live_file=False)}"
         )["count"]
         relations = db.one(
             f"""SELECT COUNT(*) AS count FROM links l
@@ -500,6 +502,8 @@ def stats(settings: Settings, latest_scan_source_summary_limit: int | None = Non
                FROM scan_runs ORDER BY scan_id DESC LIMIT 1""",
             (summary_chars,),
         )
+        latest_scan = attach_report(db, dict(latest_scan)) if latest_scan else None
+        complete_scan = last_complete_scan(db)
     return {
         "parser_version": parser_version,
         "documents_active": active, "documents_deleted_tombstones": deleted, "relations_resolved": relations,
@@ -508,4 +512,5 @@ def stats(settings: Settings, latest_scan_source_summary_limit: int | None = Non
         "links_external": external, "links_attachments": attachments, "links_directories": directories,
         "links_intentionally_incomplete": incomplete,
         "latest_scan": project_scan_summary(dict(latest_scan)) if latest_scan else None,
+        "last_complete_scan": complete_scan,
     }

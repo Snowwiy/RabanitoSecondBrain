@@ -301,12 +301,17 @@ test("dashboard scan history is bounded, refreshable, and renders untrusted fiel
   }
   const elements = new Map([["scanHistory", new Element()], ["scanHistoryStatus", new Element()]]);
   const document = { createElement: () => new Element() };
+  const scanDiagnostics = {
+    scan_coverage: {expected_sources: 2, attempted_sources: 2, completed_sources: 2, failed_sources: 0, unprocessed_sources: 0, incomplete_sources: 0, complete: true},
+    retirement_guard: {proposed: 0, withheld: 0, unconfigured_documents_preserved: 0, changed_source_identities: 0, status: "not_required", approval_applied: false, scope_incomplete: false},
+  };
   const render = new Function("$", "document", `${scanHistorySource}; return renderScanHistory;`)(
     (id) => elements.get(id), document,
   );
   const scans = Array.from({ length: 12 }, (_, index) => ({
     scan_id: index + 1, status: "ok", started_at: `2026-10-13T00:00:${String(index).padStart(2, "0")}+00:00`, finished_at: `2026-10-13T00:00:${String(index).padStart(2, "0")}+00:00`,
     added: index, modified: 1, unchanged: 20, removed: 0, skipped: 0, errors: 0, duration_ms: 12.4,
+    ...structuredClone(scanDiagnostics),
     absolute_path: "C:\\PRIVATE_PATH_SENTINEL", error_message: "PRIVATE_ERROR_SENTINEL",
   }));
   scans[1].errors = 2;
@@ -321,7 +326,7 @@ test("dashboard scan history is bounded, refreshable, and renders untrusted fiel
   assert.equal(list.children.length, 10, "the UI must cap rendering even if an endpoint returns more records");
   assert.match(elements.get("scanHistoryStatus").textContent, /10 ejecuciones recientes/);
   assert.match(text, /#1 · Completo confirmado/);
-  assert.match(text, /#2 · Parcial · errores detectados/);
+  assert.match(text, /#2 · Parcial · revisar fuentes/);
   assert.match(text, /#3 · Estado desconocido/);
   assert.match(text, /#4 · Parcial · revisar fuentes/);
   assert.match(text, /#6 · Falló/);
@@ -340,13 +345,17 @@ test("dashboard scan history is bounded, refreshable, and renders untrusted fiel
   assert.match(elements.get("scanHistoryStatus").textContent, /No hay indexaciones/);
 });
 
-test("index status requires an explicit clean result and reports unavailable retirement details", () => {
+test("index status requires verified coverage and a clear retirement guard", () => {
   const helpers = new Function("scanMetric", "scanDuration", `${scanHistorySource}; return {scanIsComplete,scanStatusLabel,scanActionMessage,latestCompleteScan};`)(
     (value) => String(value ?? "?"), (value) => String(value ?? "?"),
   );
-  const complete = {scan_id: 8, status: "ok", errors: 0, finished_at: "2026-10-22T10:00:00Z", added: 1, modified: 2, unchanged: 3, removed: 0};
-  const partial = {scan_id: 9, status: "partial", errors: 1, finished_at: "2026-10-22T11:00:00Z", added: 1, modified: 0, unchanged: 2, removed: 7, source_summary: {obsidian: {errors: 1}}};
-  const blocked = {status: "ok", errors: 2};
+  const diagnostics = {
+    scan_coverage: {expected_sources: 2, attempted_sources: 2, completed_sources: 2, failed_sources: 0, unprocessed_sources: 0, incomplete_sources: 0, complete: true},
+    retirement_guard: {proposed: 0, withheld: 0, unconfigured_documents_preserved: 0, changed_source_identities: 0, status: "not_required", approval_applied: false, scope_incomplete: false},
+  };
+  const complete = {scan_id: 8, status: "ok", errors: 0, finished_at: "2026-10-22T10:00:00Z", added: 1, modified: 2, unchanged: 3, removed: 0, ...diagnostics};
+  const partial = {scan_id: 9, status: "partial", errors: 1, finished_at: "2026-10-22T11:00:00Z", added: 1, modified: 0, unchanged: 2, removed: 7, source_summary: {obsidian: {errors: 1}}, scan_coverage: {expected_sources: 2, attempted_sources: 2, completed_sources: 1, failed_sources: 1, unprocessed_sources: 0, incomplete_sources: 1, complete: false}, retirement_guard: diagnostics.retirement_guard};
+  const blocked = {scan_id: 10, status: "partial", errors: 1, finished_at: "2026-10-22T11:30:00Z", ...diagnostics, retirement_guard: {...diagnostics.retirement_guard, proposed: 338, withheld: 338, status: "review_required"}};
   const unknown = {status: "ok"};
   const unfinished = {status: "ok", errors: 0, started_at: "2026-10-22T09:59:00Z"};
   assert.equal(helpers.scanIsComplete(complete), true);
@@ -355,18 +364,20 @@ test("index status requires an explicit clean result and reports unavailable ret
   assert.equal(helpers.scanIsComplete(unknown), false);
   assert.equal(helpers.scanIsComplete(unfinished), false);
   assert.match(helpers.scanStatusLabel(partial), /Parcial/);
-  assert.match(helpers.scanStatusLabel(blocked), /Parcial/);
+  assert.match(helpers.scanStatusLabel(blocked), /revisión manual/);
   assert.match(helpers.scanStatusLabel(unknown), /No confirmado/);
-  assert.match(helpers.scanStatusLabel(unfinished), /fecha de finalización/);
+  assert.match(helpers.scanStatusLabel(unfinished), /faltan diagnósticos/);
   assert.match(helpers.scanStatusLabel({status: "running"}), /En curso/);
   assert.match(helpers.scanActionMessage(complete), /^Sincronización completa confirmada/);
   const partialMessage = helpers.scanActionMessage(partial);
-  assert.match(partialMessage, /no confirmada como completa/);
+  assert.match(partialMessage, /quedó parcial/);
   assert.match(partialMessage, /Fuentes con error: obsidian \(1\)/);
   assert.match(partialMessage, /7 retiros reportados/);
-  assert.match(partialMessage, /no expone retiros retenidos ni revisión manual/);
-  assert.match(helpers.scanActionMessage(blocked), /no confirmada como completa/);
-  assert.match(helpers.scanActionMessage({status: "error", errors: 1}), /no confirmada como completa/);
+  const blockedMessage = helpers.scanActionMessage(blocked);
+  assert.match(blockedMessage, /revisión humana/);
+  assert.match(blockedMessage, /338 retiros retenidos/);
+  assert.match(blockedMessage, /no se aprobaron retiros automáticamente/);
+  assert.match(helpers.scanActionMessage({status: "error", errors: 1}), /La indexación falló/);
   assert.equal(helpers.latestCompleteScan([partial, complete]), complete);
   assert.equal(helpers.latestCompleteScan([partial]), null);
   assert.equal(helpers.latestCompleteScan([...Array(10).fill(partial), complete]), null, "a completed scan outside the API's ten recent entries is not presented as last known");
@@ -381,15 +392,15 @@ test("HTTP 200 partial indexing response remains partial in the dashboard operat
   const run = new Function("$", "fetch", "loadOptions", "loadStats", "loadGraph", "loadDecisions", "auditSummary", "renderAuditFindings", "scanActionMessage",
     `${runActionSource}; return runAction;`)(
     (id) => elements.get(id),
-    async () => ({ok: true, json: async () => ({status: "partial", errors: 1, added: 0, modified: 0, unchanged: 0, removed: 0, source_summary: {projects: {errors: 1}}})}),
+    async () => ({ok: true, json: async () => ({status: "partial", errors: 1, added: 0, modified: 0, unchanged: 0, removed: 0, source_summary: {projects: {errors: 1}}, scan_coverage: {expected_sources: 2, attempted_sources: 2, completed_sources: 1, failed_sources: 1, unprocessed_sources: 0, incomplete_sources: 1, complete: false}, retirement_guard: {proposed: 0, withheld: 0, unconfigured_documents_preserved: 0, changed_source_identities: 0, status: "not_required", approval_applied: false, scope_incomplete: false}})}),
     async () => calls.push("options"), async () => calls.push("stats"), async () => calls.push("graph"), async () => calls.push("decisions"),
     () => "audit", () => {}, scanHelpers.scanActionMessage,
   );
   const button = {disabled: false};
   await run("/api/index", button, "Sincronizando");
-  assert.match(elements.get("operationStatus").textContent, /^Sincronización no confirmada como completa \(Parcial/);
+  assert.match(elements.get("operationStatus").textContent, /^La indexación quedó parcial/);
   assert.match(elements.get("operationStatus").textContent, /Fuentes con error: projects \(1\)/);
-  assert.match(elements.get("operationStatus").textContent, /no expone retiros retenidos ni revisión manual/);
+  assert.match(elements.get("operationStatus").textContent, /1 fuente fallida/);
   assert.deepEqual(calls, ["options", "stats", "graph", "decisions"]);
   assert.equal(button.disabled, false);
 });
@@ -403,8 +414,9 @@ test("dashboard stats summary executes and calls out a partial latest scan", asy
   const sourceFailures = new Function("scanMetric", `${sourceFailuresSource}; return scanSourceFailures;`)(
     (value) => String(value),
   );
+  const scanHelpers = new Function("scanMetric", "scanDuration", `${scanHistorySource}; return {scanStatusLabel,scanOutcomeDetails,lastCompleteScanLabel};`)(String, String);
   const run = new Function(
-    "$", "api", "loadScans", "loadDocumentChanges", "scanStatusLabel", "scanSourceFailures", "statCard", "latestCompleteScan", "scanMetric",
+    "$", "api", "loadScans", "loadDocumentChanges", "scanStatusLabel", "scanOutcomeDetails", "lastCompleteScanLabel", "scanSourceFailures", "statCard", "scanMetric",
     `${statsLoaderSource}; return loadStats;`,
   )(
     (id) => elements.get(id),
@@ -416,34 +428,38 @@ test("dashboard stats summary executes and calls out a partial latest scan", asy
         latest_scan: {
           status: "partial", errors: 1, finished_at: "2026-10-13T12:30:00Z",
           added: 0, modified: 0, unchanged: 337,
+          scan_coverage: {expected_sources: 2, attempted_sources: 2, completed_sources: 1, failed_sources: 1, unprocessed_sources: 0, incomplete_sources: 1, complete: false},
+          retirement_guard: {proposed: 0, withheld: 0, unconfigured_documents_preserved: 0, changed_source_identities: 0, status: "not_required", approval_applied: false, scope_incomplete: true},
           source_summary: { obsidian: { errors: 1 }, "<img src=x>": { errors: 7 } },
         },
+        last_complete_scan: {scan_id: 4, started_at: "2026-10-10T00:00:00Z", finished_at: "2026-10-10T00:00:01Z"},
       };
     },
     async () => { calls.push("scans"); return [{status: "partial", errors: 1}]; },
     async () => calls.push("changes"),
-    (scan) => scan.status === "partial" ? "Parcial · revisar fuentes" : "Estado desconocido",
+    scanHelpers.scanStatusLabel,
+    scanHelpers.scanOutcomeDetails,
+    scanHelpers.lastCompleteScanLabel,
     sourceFailures,
     (value, label) => `<span>${value}:${label}</span>`,
-    (scans) => (Array.isArray(scans) ? scans.slice(0, 10) : []).find((scan) => scan.status === "ok" && scan.errors === 0) || null,
     (value) => String(value ?? "?"),
   );
   await run();
-  assert.match(elements.get("scan").textContent, /^Último intento: Parcial · revisar fuentes · 2026-10-13T12:30:00Z/);
+  assert.match(elements.get("scan").textContent, /^Último intento: Parcial · cobertura incompleta · 2026-10-13T12:30:00Z/);
   assert.match(elements.get("scan").textContent, /Fuentes con error: obsidian \(1\)/);
+  assert.match(elements.get("scan").textContent, /1 fuente fallida/);
   assert.doesNotMatch(elements.get("scan").textContent, /<img/);
-  assert.match(elements.get("scan").textContent, /· =337 · Fuentes con error:/);
-  assert.match(elements.get("scan").textContent, /No aparece una sincronización completa entre las 10 ejecuciones recientes/);
-  assert.match(elements.get("scan").textContent, /Retiros retenidos\/revisión manual: no informados/);
+  assert.match(elements.get("scan").textContent, /· =337 · 1 fuente fallida/);
+  assert.match(elements.get("scan").textContent, /Última indexación completa confirmada: 2026-10-10T00:00:01Z · ejecución #4/);
   assert.deepEqual(calls, ["/api/stats", "scans", "changes"]);
   const unavailable = new Function(
-    "$", "api", "loadScans", "loadDocumentChanges", "scanStatusLabel", "scanSourceFailures", "statCard", "latestCompleteScan", "scanMetric",
+    "$", "api", "loadScans", "loadDocumentChanges", "scanStatusLabel", "scanOutcomeDetails", "lastCompleteScanLabel", "scanSourceFailures", "statCard", "scanMetric",
     `${statsLoaderSource}; return loadStats;`,
   )((id) => elements.get(id), async () => ({documents_active: 0, relations_resolved: 0, relations_suggested: 0, projects: 0, links_broken: 0, links_directories: 0, unique_tags: 0, latest_scan: null}),
-    async () => null, async () => {}, () => "Estado desconocido", () => "", () => "", () => null, (value) => String(value ?? "?"));
+    async () => null, async () => {}, scanHelpers.scanStatusLabel, scanHelpers.scanOutcomeDetails, scanHelpers.lastCompleteScanLabel, () => "", () => "", (value) => String(value ?? "?"));
   await unavailable();
-  assert.match(elements.get("scan").textContent, /No se pudo consultar el historial reciente/);
-  assert.doesNotMatch(elements.get("scan").textContent, /No aparece una sincronización completa/);
+  assert.match(elements.get("scan").textContent, /Sin registro de una indexación completa confirmada/);
+  assert.doesNotMatch(elements.get("scan").textContent, /Sincronización completa confirmada/);
 });
 
 test("dashboard document changes are bounded, source-cited, and rendered only as text", () => {

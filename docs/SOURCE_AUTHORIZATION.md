@@ -24,9 +24,11 @@ en sus descriptores; no se sustituye esa comprobación.
 Revocar una fuente no borra su índice, sus originales o el historial. Si vuelve
 a autorizarse exactamente el mismo origen, sus filas pueden recuperarse otra
 vez; Audit sigue comprobando frescura por separado. Una raíz autorizada pero
-temporalmente inaccesible no se trata como permiso revocado: la recuperación
-offline de caché permanece disponible. Esto no prueba que el archivo aún exista
-o conserve el mismo contenido.
+temporalmente inaccesible no se trata como borrado ni pierde sus filas, pero la
+corrección P0 exige verificación en vivo antes de entregar texto cacheado. La
+recuperación offline no verificable deja de concederse como permiso implícito.
+Ver [garantías y límites de archivo](P0_BACKEND_SECURITY.md): identidad de handle,
+rechazo de enlaces duros/reparse, correspondencia de caché y perfiles derivados.
 
 La configuración se evalúa al abrir la conexión, no se relee un archivo JSON
 por cada resultado. No es un sistema de usuarios/ACL del servidor ni una

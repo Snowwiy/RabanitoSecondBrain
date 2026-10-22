@@ -9,6 +9,7 @@ from .config import SETTINGS_WRITE_LOCK, Settings
 from .db import Database
 from .utils import path_key, safe_relative
 from .visibility import project_visibility_sql, register_project_visibility
+from .source_files import file_visibility_sql
 
 
 def resolve_active_project_root(settings: Settings, identifier: str) -> str:
@@ -86,7 +87,8 @@ def recent_document_changes(
                       d.title,d.source_kind,d.project_name,d.relative_path,d.status
                FROM document_changes c JOIN documents d ON d.document_id=c.document_id
                WHERE (""" + " OR ".join(source_conditions) + ") AND " + association_condition +
-            " AND " + project_visibility_sql('d') + project_filter_sql +
+            " AND " + project_visibility_sql('d', live_file=False) +
+            " AND (d.status<>'active' OR " + file_visibility_sql('d') + ")" + project_filter_sql +
             " ORDER BY c.change_id DESC LIMIT ?",
             params,
         )

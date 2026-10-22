@@ -161,11 +161,11 @@ class ScanRetirementTests(unittest.TestCase):
     def test_read_error_prevents_other_absence_retirement(self):
         self.seed(2)
         (self.root/'vault/Note001.md').unlink()
-        original=Path.read_text
+        original=indexer.read_source
         def deny(path,*args,**kwargs):
             if path==self.root/'vault/Note000.md':raise PermissionError('synthetic note denial')
             return original(path,*args,**kwargs)
-        with patch.object(Path,'read_text',deny):result=index_all(self.settings)
+        with patch('rabanito.indexer.read_source',side_effect=deny):result=index_all(self.settings)
         self.assertEqual((result['status'],result['removed'],self.active()),('partial',0,2))
 
     def test_parse_error_prevents_other_absence_retirement(self):
