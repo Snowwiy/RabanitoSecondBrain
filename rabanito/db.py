@@ -224,32 +224,39 @@ class Database:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.connection = sqlite3.connect(str(path), timeout=30)
-        self.connection.row_factory = sqlite3.Row
-        self.connection.execute("PRAGMA foreign_keys=ON")
-        self.connection.execute("PRAGMA busy_timeout=30000")
-        self.connection.execute("PRAGMA journal_mode=WAL")
-        self.connection.execute("PRAGMA synchronous=NORMAL")
-        self.connection.executescript(SCHEMA)
-        document_columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(documents)")}
-        if "project_root_path" not in document_columns:
-            self.connection.execute("ALTER TABLE documents ADD COLUMN project_root_path TEXT")
-        self.connection.execute("CREATE INDEX IF NOT EXISTS idx_documents_project_root ON documents(project_root_path, status)")
-        # Existing project-source rows already use the project directory as their
-        # source_root, so this backfill needs no file reads or inferred names.
-        self.connection.execute(
-            "UPDATE documents SET project_root_path=source_root WHERE source_kind='projects' AND project_root_path IS NULL"
-        )
-        link_columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(links)")}
-        if "resolution_reason" not in link_columns:
-            self.connection.execute("ALTER TABLE links ADD COLUMN resolution_reason TEXT")
-        project_columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(projects)")}
-        if "dependencies_json" not in project_columns:
-            self.connection.execute("ALTER TABLE projects ADD COLUMN dependencies_json TEXT NOT NULL DEFAULT '[]'")
-        if "dependencies_truncated" not in project_columns:
-            self.connection.execute("ALTER TABLE projects ADD COLUMN dependencies_truncated INTEGER NOT NULL DEFAULT 0")
-        if "dependency_errors_json" not in project_columns:
-            self.connection.execute("ALTER TABLE projects ADD COLUMN dependency_errors_json TEXT NOT NULL DEFAULT '[]'")
-        self.connection.commit()
+        try:
+            self.connection.row_factory = sqlite3.Row
+            self.connection.execute("PRAGMA foreign_keys=ON")
+            self.connection.execute("PRAGMA busy_timeout=30000")
+            self.connection.execute("PRAGMA journal_mode=WAL")
+            self.connection.execute("PRAGMA synchronous=NORMAL")
+            self.connection.executescript("BEGIN IMMEDIATE;\n" + SCHEMA)
+            document_columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(documents)")}
+            if "project_root_path" not in document_columns:
+                self.connection.execute("ALTER TABLE documents ADD COLUMN project_root_path TEXT")
+            self.connection.execute("CREATE INDEX IF NOT EXISTS idx_documents_project_root ON documents(project_root_path, status)")
+            # Existing project-source rows already use the project directory as their
+            # source_root, so this backfill needs no file reads or inferred names.
+            self.connection.execute(
+                "UPDATE documents SET project_root_path=source_root WHERE source_kind='projects' AND project_root_path IS NULL"
+            )
+            link_columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(links)")}
+            if "resolution_reason" not in link_columns:
+                self.connection.execute("ALTER TABLE links ADD COLUMN resolution_reason TEXT")
+            project_columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(projects)")}
+            if "dependencies_json" not in project_columns:
+                self.connection.execute("ALTER TABLE projects ADD COLUMN dependencies_json TEXT NOT NULL DEFAULT '[]'")
+            if "dependencies_truncated" not in project_columns:
+                self.connection.execute("ALTER TABLE projects ADD COLUMN dependencies_truncated INTEGER NOT NULL DEFAULT 0")
+            if "dependency_errors_json" not in project_columns:
+                self.connection.execute("ALTER TABLE projects ADD COLUMN dependency_errors_json TEXT NOT NULL DEFAULT '[]'")
+            self.connection.commit()
+        except BaseException:
+            try:
+                self.connection.rollback()
+            finally:
+                self.connection.close()
+            raise
 
     def __enter__(self) -> "Database":
         return self

@@ -6,6 +6,7 @@ from pathlib import Path
 from .config import SETTINGS_WRITE_LOCK, Settings
 from .db import Database
 from .source_policy import document_eligibility
+from .source_files import file_visible, file_visibility_sql, derived_visibility_sql
 from .utils import path_key, safe_relative
 
 
@@ -84,12 +85,20 @@ def register_project_visibility(db: Database, settings: Settings) -> None:
     db.connection.create_function("rabanito_project_visible", 3, visible)
     db.connection.create_function("rabanito_project_visible", 4, document_visible)
     db.connection.create_function('rabanito_document_eligible', 2, document_eligibility(settings), deterministic=True)
+    # Never deterministic/memoized: permissions and hardlink topology may change
+    # without any SQLite update, even on an already-open connection.
+    db.connection.create_function('rabanito_file_visible', 4, file_visible)
+    db.connection.create_function('rabanito_file_visible', 8, file_visible)
+    db.connection.create_function('rabanito_same_root', 2,
+                                  lambda a,b: int(bool(a and b) and path_key(a)==path_key(b)), deterministic=True)
 
 
-def project_visibility_sql(alias: str = "d") -> str:
+def project_visibility_sql(alias: str = "d", *, live_file: bool = True, include_derived: bool = True) -> str:
     """SQL predicate for an internally named document-table alias."""
     return (
         f"(rabanito_project_visible({alias}.source_kind,{alias}.project_name,"
         f"{alias}.project_root_path,{alias}.source_root)=1 "
-        f"AND rabanito_document_eligible({alias}.source_kind,{alias}.relative_path)=1)"
+        f"AND rabanito_document_eligible({alias}.source_kind,{alias}.relative_path)=1 "
+        + (f"AND {file_visibility_sql(alias)})" if live_file else
+           f"AND {derived_visibility_sql(alias)})" if include_derived else ")")
     )

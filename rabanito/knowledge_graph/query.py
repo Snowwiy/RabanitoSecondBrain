@@ -16,6 +16,7 @@ from ..coding_memory import _verified_records
 from ..config import SETTINGS_WRITE_LOCK, Settings
 from ..db import Database
 from ..utils import path_key
+from ..source_files import file_visibility_sql
 from .projection import stamp
 from .store import check_source_schemas, configure, descriptors, encode, epoch_proof, fingerprint, own_outputs, schema, source_version, state
 from .attack import KINDS as ATTACK_KINDS
@@ -133,7 +134,11 @@ def _context(db, settings, project, options, mode, anchor=None):
     generation = db.one("SELECT max(run_id) FROM kg_runs")[0]
     source_stamp = source_version(db, settings, include_file=True)
     watched = epoch_proof(db)
-    proof_key = fingerprint(str(settings.database_path.resolve()), watched, generation, source_stamp, sorted(projects))
+    # SQLite epochs cannot prove current filesystem permissions or link counts.
+    # Revalidate every source before considering a clean projection proof.
+    filesystem_scope = tuple(tuple(row) for row in db.query(
+        "SELECT document_id," + file_visibility_sql('d') + " FROM documents d WHERE status='active' ORDER BY document_id"))
+    proof_key = fingerprint(str(settings.database_path.resolve()), watched, generation, source_stamp, sorted(projects), filesystem_scope)
     with _PROOF_LOCK:
         fast = watched is not None and proof_key in _CLEAN_PROOFS
     missing_sql = "SELECT count(*) FROM U LEFT JOIN kg_inputs g ON g.input_key=U.k WHERE g.input_key IS NULL OR g.active=0 OR g.fingerprint<>U.fp"

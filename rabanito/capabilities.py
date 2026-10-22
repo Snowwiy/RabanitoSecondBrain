@@ -16,6 +16,7 @@ from .audit_inventory import COUNT_FIELDS, STATUSES, empty_inventory, inspect_so
 from .db import Database
 from .indexer import _existing_source_directory, _existing_source_file, _index_lock, _project_is_excluded
 from .visibility import project_visibility_sql, register_project_visibility
+from .source_files import open_source, read_text as read_source_text, direct_visibility_sql
 from .search import stats
 from .utils import (
     contains_reparse_component, iso_now, path_key, redact_sensitive_lines, slugify,
@@ -100,7 +101,7 @@ def _potential_contradictions(
             # Read at most the remaining global budget plus one byte to detect
             # concurrent growth without loading an unbounded source into memory.
             read_limit = min(max_bytes, remaining_bytes)
-            with path.open("rb") as source:
+            with open_source(path) as source:
                 raw = source.read(read_limit + 1)
             bytes_read += len(raw)
             if len(raw) > read_limit:
@@ -243,12 +244,15 @@ def _review_index_drift(
     max_documents = bounded_setting("audit_index_check_max_documents", 2000, 10000)
     max_total_bytes = bounded_setting("audit_index_check_max_bytes", 67_108_864, 268_435_456)
     register_project_visibility(db, settings)
-    visible_document = project_visibility_sql("d")
+    # A metadata-only drift report must still count absent/unsafe paths, but
+    # cannot expose their cached title or content as recovered knowledge.
+    visible_document = project_visibility_sql("d", live_file=False)
     active_documents = int(db.one(
         f"SELECT COUNT(*) AS c FROM documents d WHERE d.status='active' AND {visible_document}"
     )["c"])
     rows = db.query(
-        "SELECT d.document_id,d.title,d.source_kind,d.source_root,d.relative_path,d.size_bytes,d.mtime_ns,d.content_hash "
+        "SELECT d.document_id,CASE WHEN " + direct_visibility_sql('d') + " "
+        "THEN d.title ELSE '' END AS title,d.source_kind,d.source_root,d.relative_path,d.size_bytes,d.mtime_ns,d.content_hash "
         "FROM documents d WHERE d.status='active' AND " + visible_document +
         " ORDER BY d.document_id LIMIT ?", (max_documents,),
     )
@@ -309,7 +313,7 @@ def _review_index_drift(
                 checked += 1
                 record(row, "path_unavailable_or_unsafe")
                 continue
-            with path.open("rb") as handle:
+            with open_source(path) as handle:
                 raw = handle.read(audit_read_limit + 1)
             after = path.stat()
         except OSError:
@@ -371,7 +375,7 @@ def _sensitive_redaction_review(
         try:
             if path.stat().st_size > max(1, max_bytes):
                 continue
-            source_text = path.read_text(encoding="utf-8-sig", errors="replace")
+            source_text = read_source_text(path, max(1, max_bytes))
         except OSError:
             continue
         marker_lines = unclosed_private_key_lines(source_text)
@@ -548,6 +552,7 @@ def _collect_audit_raw(settings: Settings) -> dict[str, Any]:
         db.execute('BEGIN')
         register_project_visibility(db, settings)
         visible_document = project_visibility_sql("d")
+        visible_metadata = project_visibility_sql("d", live_file=False)
         visible_source = project_visibility_sql("source")
         visible_target = project_visibility_sql("target")
         active_link_counts = {
@@ -568,20 +573,20 @@ def _collect_audit_raw(settings: Settings) -> dict[str, Any]:
             f"""SELECT COUNT(DISTINCT payload.document_id) AS c FROM (
                    SELECT d.document_id FROM documents_fts f
                    JOIN documents d ON d.document_id=CAST(f.document_id AS INTEGER)
-                   WHERE d.status IN ('deleted','skipped') AND {visible_document}
+                   WHERE d.status IN ('deleted','skipped') AND {visible_metadata}
                    UNION ALL
                    SELECT d.document_id FROM document_chunks c
                    JOIN documents d ON d.document_id=c.document_id
-                   WHERE d.status IN ('deleted','skipped') AND {visible_document}
+                   WHERE d.status IN ('deleted','skipped') AND {visible_metadata}
                    UNION ALL
                    SELECT d.document_id FROM chunks_fts f
                    JOIN documents d ON d.document_id=CAST(f.document_id AS INTEGER)
-                   WHERE d.status IN ('deleted','skipped') AND {visible_document}
+                   WHERE d.status IN ('deleted','skipped') AND {visible_metadata}
                ) AS payload"""
         )["c"]
         counts = {
             "documents_active": db.one(f"SELECT COUNT(*) AS c FROM documents d WHERE d.status='active' AND {visible_document}")["c"],
-            "documents_deleted": db.one(f"SELECT COUNT(*) AS c FROM documents d WHERE d.status='deleted' AND {visible_document}")["c"],
+            "documents_deleted": db.one(f"SELECT COUNT(*) AS c FROM documents d WHERE d.status='deleted' AND {visible_metadata}")["c"],
             "documents_with_inactive_search_payload": inactive_search_payload_documents,
             "documents_with_parse_errors": db.one(f"SELECT COUNT(*) AS c FROM documents d WHERE d.status='active' AND d.parse_error IS NOT NULL AND {visible_document}")["c"],
             "links_resolved": active_resolved,

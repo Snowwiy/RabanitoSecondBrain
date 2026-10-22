@@ -82,7 +82,8 @@ class DocumentedMemoryTests(unittest.TestCase):
     def test_modified_or_deleted_source_is_skipped_without_indexing(self):
         path = self.record(); path.write_text(path.read_text(encoding="utf-8") + "\nchanged\n", encoding="utf-8")
         result = self.query(); self.assertEqual(result["results"], [])
-        self.assertEqual(result["coverage"]["stale_or_unverifiable_skipped"], 1)
+        self.assertEqual(result["coverage"]["stale_or_unverifiable_skipped"], 0)
+        self.assertEqual(result["coverage"]["candidates_examined"], 0)
         path.unlink(); self.assertEqual(self.query()["results"], [])
 
     def test_forged_database_approval_disagrees_with_live_source(self):
@@ -115,7 +116,8 @@ class DocumentedMemoryTests(unittest.TestCase):
     def test_oversized_live_record_is_rejected_before_text_exposure(self):
         path = self.record(); path.write_text(path.read_text(encoding="utf-8") + "x" * (256 * 1024), encoding="utf-8")
         result = self.query(); self.assertEqual(result["results"], [])
-        self.assertEqual(result["coverage"]["stale_or_unverifiable_skipped"], 1)
+        self.assertEqual(result["coverage"]["stale_or_unverifiable_skipped"], 0)
+        self.assertEqual(result["coverage"]["candidates_examined"], 0)
 
     def test_candidate_budget_and_duplicate_content_do_not_expand_context(self):
         self.record()

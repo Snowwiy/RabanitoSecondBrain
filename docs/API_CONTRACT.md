@@ -10,10 +10,17 @@ JSON UTF-8. Las consultas que pueden contener texto privado utilizan POST, no UR
 
 ## Rutas vigentes
 
+[Correcciones P0 de backend](P0_BACKEND_SECURITY.md): identidad y permisos de
+archivo comunes, plazos absolutos de lectura HTTP y migración documental atómica.
+[Contrato H2 para Luna](SCAN_OUTCOMES.md): diagnósticos aditivos de cobertura y
+retiros en index/stats/scans, más `last_complete_scan` confirmado; HTTP200 no
+equivale a sincronización completa. No modifica el lector Markdown ni el frontend.
+
 [Retiro incremental protegido](INDEX_RETIREMENT.md): no se retiran filas de una
 raíz anterior por escanear otra del mismo tipo. Cobertura incompleta y caídas
 masivas producen `partial`/`error`, no `ok`. POST `/api/index` no habilita aprobación
-de retiros ni cambia sus campos compactos; leer `status`, no solo HTTP200. La CLI
+de retiros; los campos compactos previos se conservan y H2 agrega diagnósticos
+seguros. Leer `status` y cobertura, no solo HTTP200. La CLI
 completa expone cobertura/plan y un flag de aprobación exacta, nunca un bypass.
 
 [Autorización de fuentes](SOURCE_AUTHORIZATION.md): los lectores documentales

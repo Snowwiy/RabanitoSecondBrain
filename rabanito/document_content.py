@@ -102,62 +102,12 @@ def _authorize(settings, row, projects):
 
 @contextmanager
 def _open_readonly(path: Path):
-    """Pin a regular file before reading. See Microsoft API sources in the contract.
-
-    Windows: OPEN_EXISTING/GENERIC_READ, no write/delete sharing, no final reparse
-    following, and actual handle path verification. POSIX: dir_fd + O_NOFOLLOW.
-    """
-    if os.name == "nt":
-        import ctypes
-        import msvcrt
-        from ctypes import wintypes
-        api = ctypes.WinDLL("kernel32", use_last_error=True)
-        create = api.CreateFileW
-        create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
-                           wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
-        create.restype = wintypes.HANDLE
-        close = api.CloseHandle
-        close.argtypes, close.restype = [wintypes.HANDLE], wintypes.BOOL
-        final = api.GetFinalPathNameByHandleW
-        final.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
-        final.restype = wintypes.DWORD
-        file_type = api.GetFileType
-        file_type.argtypes, file_type.restype = [wintypes.HANDLE], wintypes.DWORD
-        handle = create(str(path), 0x80000000, 1, None, 3, 0x00200000, None)
-        if handle == ctypes.c_void_p(-1).value:
-            raise OSError("source_open_failed")
-        try:
-            buffer = ctypes.create_unicode_buffer(32768)
-            length = final(handle, buffer, len(buffer), 0)
-            actual = buffer.value
-            if actual.startswith("\\\\?\\UNC\\"):
-                actual = "\\\\" + actual[8:]
-            elif actual.startswith("\\\\?\\"):
-                actual = actual[4:]
-            if not 0 < length < len(buffer) or file_type(handle) != 1 or path_key(actual) != path_key(path):
-                raise DocumentContentError(404, "document_not_available")
-            fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
-            handle = None  # The fd now owns the handle.
-        finally:
-            if handle is not None:
-                close(handle)
-    else:
-        parent_fd = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            for part in path.parts[1:-1]:
-                child_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
-                os.close(parent_fd)
-                parent_fd = child_fd
-            fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent_fd)
-        finally:
-            os.close(parent_fd)
-    with os.fdopen(fd, "rb", buffering=0) as stream:
-        info = os.fstat(stream.fileno())
-        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
-                or getattr(info, "st_file_attributes", 0) & 0x400):
-            raise DocumentContentError(404, "document_not_available")
-        yield stream
-
+    from .source_files import open_source, UnsafeSourceError
+    try:
+        with open_source(path) as stream:
+            yield stream
+    except UnsafeSourceError:
+        raise DocumentContentError(404, "document_not_available") from None
 
 # Defense in depth, not a universal DLP or a replacement for source exclusions.
 _ABSOLUTE = re.compile(r"(?i)(?:file://[^\s<>\"`]+|(?<!\w)[a-z]:[\\/][^\r\n<>\"`]*|\\\\[^\r\n<>\"`]+|(?<![:/\w])/(?:Users|home|tmp|var|mnt|opt|etc|root)/[^\r\n<>\"`]*)")
@@ -228,11 +178,17 @@ def document_content(settings: Settings, document_id, max_bytes) -> dict:
             if len(projects) > 5000:
                 raise DocumentContentError(503, "document_authorization_limit")
             row = db.one("SELECT " + AUTH_COLUMNS + " FROM documents d WHERE document_id=? AND d.status='active' AND "
-                         + project_visibility_sql("d"), (document_id,))
+                         + project_visibility_sql("d", live_file=False), (document_id,))
             if not row:
                 raise DocumentContentError(404, "document_not_available")
             path = _authorize(settings, row, projects)
             text, truncated = _read(settings, row, path, max_bytes)
+            from .source_files import file_visible
+            binding = db.one('SELECT substr(value,1,2049) FROM meta WHERE key=?',
+                             ('document_file_identity:' + str(document_id),))
+            if not file_visible(row['source_root'], row['relative_path'], row['absolute_path'], row['path_key'],
+                                row['content_hash'], row['size_bytes'], row['mtime_ns'], binding[0] if binding else None):
+                raise DocumentContentError(409, 'document_changed_reindex_required')
             _authorize(settings, row, projects)
             references, seen = [], set()
             links = db.query("SELECT " + AUTH_COLUMNS + """, substr(d.title,1,1001) AS title,

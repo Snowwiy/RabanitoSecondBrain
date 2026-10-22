@@ -324,7 +324,8 @@ def inspect_inventory(settings: Settings, project: str, relative_path: str, *, k
     before = path.stat()
     if before.st_size > max_bytes:
         raise ValueError("sbom_size_limit")
-    with path.open("rb") as stream:
+    from .source_files import open_source
+    with open_source(path) as stream:
         opened = os.fstat(stream.fileno())
         if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino) or contains_reparse_component(path):
             raise ValueError("sbom_changed_during_read")
