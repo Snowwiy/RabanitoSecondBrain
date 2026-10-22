@@ -3,6 +3,7 @@
 ## Checkpoint H2/H3/H4 (2026-10-22)
 
 - Rama/worktree: `integration/rabanito-3.0`, `G:\Hermes\Memoria\Rabanito-SecondBrain-Integration`; base al iniciar `e80a63aa540fe3ba99dc8f03b6c08de141969701`. `origin/main` se consultó con fetch (`2f20e6e65e5fd8a2f09ab199321f74de5434099a`); no se fusionó ni editó. `origin/Frontend-Design` no se modificó.
+- La implementación H2/H3/H4 está publicada como `677e02c8ff83cee2381c09d94888282fd2dcdf6f` y el remoto se verificó con `git ls-remote`.
 - H3 resuelto en el frontend y con pruebas de respuestas fuera de orden, fallo tardío, cambios rápidos y reinicio de selección.
 - H4 resuelto con protección de capacidad/cursor/progreso, conservación de aristas cross-page y límites visibles de 1,000 nodos / 4,000 aristas.
 - H2 parcialmente resuelto: la UI muestra fielmente el estado compactado existente y no usa HTTP 200 como éxito. Esperar el contrato de Sol con cobertura, conteo de retiros retenidos y revisión requerida; no inferirlos de contadores actuales.

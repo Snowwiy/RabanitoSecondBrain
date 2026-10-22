@@ -2,6 +2,7 @@
 
 ## Corrección de coherencia H2/H3/H4 (2026-10-22)
 
+- La implementación quedó publicada en `origin/integration/rabanito-3.0` como `677e02c8ff83cee2381c09d94888282fd2dcdf6f`.
 - H3 implementado en `web/knowledge.js`: un `contextGate` dedicado invalida cada recuperación anterior cuando cambia/limpia la selección. Tanto éxito como error/finally requieren generación, ID y selección actuales. La carga de metadatos mantiene deshabilitado el control hasta que el documento seleccionado esté listo. Fragmentos, relaciones y expansión tipada mantienen protección equivalente.
 - H4 implementado con cursor de página y conjunto de cursores consumidos separados de los de vecinos. `canRequestTypedPage` bloquea solicitudes improductivas en el límite, sin cursor o con cursor repetido. `typedPageStopReason` detiene página vacía, duplicada o sin avance; preserva relación nueva cross-page. La UI indica cargados/candidatos y topes 1,000/4,000.
 - H2 parcialmente resuelto con los campos del contrato vigente: el dashboard solo marca ejecución completa con estado `ok`, cero errores y `finished_at`; separa partial/error/running/incompleto, muestra errores por fuente, refleja HTTP 200 parcial y busca la última completa dentro de diez registros. El contrato HTTP actual no publica `scan_coverage`/`retirement_guard`; exactitud de retiros retenidos y revisión manual sigue bloqueada hasta el contrato de Sol.

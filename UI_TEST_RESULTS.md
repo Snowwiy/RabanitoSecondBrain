@@ -2,6 +2,7 @@
 
 ## Corrección H2/H3/H4 — 2026-10-22
 
+- Implementación publicada en `origin/integration/rabanito-3.0`: `677e02c8ff83cee2381c09d94888282fd2dcdf6f` (verificada con `git ls-remote`).
 - H3: contexto del Inspector usa una generación propia por petición, invalida solicitudes al seleccionar otro documento o limpiar la selección y valida generación, ID y selección antes de cambiar fragmentos, estado o botón. Fragmentos y relaciones siguen protegidos por la generación del Inspector; expansiones tipadas tardías del nodo A se descartan al seleccionar B.
 - H4: no se solicita una página adicional al llegar a 1,000 nodos, ni sin cursor válido o con cursor repetido. Páginas vacías o compuestas solo por duplicados terminan la paginación; una arista nueva entre nodos de páginas distintas sí cuenta como progreso. Se muestran entidades cargadas frente a candidatos y los límites de 1,000 nodos/4,000 aristas; no se elevaron.
 - H2: dashboard y acción de indexación no confirman éxito por HTTP 200. Requieren `status=ok`, `errors=0` y `finished_at`; los estados parciales, fallidos, en curso o incompletos se diferencian. Se muestran errores de fuente y la última ejecución completa que aparezca en las diez más recientes; si falla el historial no se afirma que no exista una. La API aún no expone `scan_coverage` ni `retirement_guard`, así que los retiros retenidos y la revisión manual quedan expresamente como no informados.
