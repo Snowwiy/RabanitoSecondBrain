@@ -1,5 +1,12 @@
 # UI integration plan
 
+## Coherencia de indexación, Inspector y paginación (2026-10-22)
+
+- H3 corregido en el Inspector: contexto tardío ya no puede reemplazar fragmentos ni estados del documento actual; metadatos, fragmentos, relaciones, contexto y expansión tipada quedan vinculados a la selección vigente.
+- H4 corregido en el Knowledge Graph: evita lecturas posteriores sin capacidad, cursor repetido/vacío o páginas sin progreso; distingue candidatos de entidades cargadas y mantiene el límite de representación de 1,000 nodos/4,000 relaciones.
+- H2: el frontend cumple el subconjunto disponible (`status`, `errors`, `finished_at`, `source_summary`) y diferencia ejecuciones completas, parciales, fallidas, en curso y no confirmadas. Retiros retenidos/revisión manual no se pueden leer del HTTP compactado actual. Bloqueo explícito hasta que Sol publique esos campos sanitizados; no modificar rutas backend durante su trabajo.
+- No se usaron datos operativos. QA visual por navegador queda pendiente debido a ausencia del runtime Jev requerido. La regresión automatizada sí está ejecutada; consultar `UI_TEST_RESULTS.md` para cifras y bloqueos.
+
 ## Data-integrity incident — investigation status (2026-10-21)
 
 - The previous final-QA statement that the integration DB was unchanged was incorrect: its hash script inspected the main checkout DB, not `integration/rabanito-3.0/data/rabanito.db`. That claim is withdrawn in `UI_TEST_RESULTS.md`.

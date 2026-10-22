@@ -1,5 +1,16 @@
 # UI next session checkpoint
 
+## Checkpoint H2/H3/H4 (2026-10-22)
+
+- Rama/worktree: `integration/rabanito-3.0`, `G:\Hermes\Memoria\Rabanito-SecondBrain-Integration`; base al iniciar `e80a63aa540fe3ba99dc8f03b6c08de141969701`. `origin/main` se consultó con fetch (`2f20e6e65e5fd8a2f09ab199321f74de5434099a`); no se fusionó ni editó. `origin/Frontend-Design` no se modificó.
+- H3 resuelto en el frontend y con pruebas de respuestas fuera de orden, fallo tardío, cambios rápidos y reinicio de selección.
+- H4 resuelto con protección de capacidad/cursor/progreso, conservación de aristas cross-page y límites visibles de 1,000 nodos / 4,000 aristas.
+- H2 parcialmente resuelto: la UI muestra fielmente el estado compactado existente y no usa HTTP 200 como éxito. Esperar el contrato de Sol con cobertura, conteo de retiros retenidos y revisión requerida; no inferirlos de contadores actuales.
+- El historial HTTP expone diez ejecuciones; “última completa” se limita y etiqueta a esa ventana. Sin una allí, no afirma que nunca hubo una.
+- QA visual interactiva queda pendiente porque falta el runtime Jev obligatorio para esta skill; no sustituirlo por otro controlador. Manual Windows: iniciar el servidor sintético `node tests/neural_command_center_fixture_server.mjs 8877`; revisar Orbit, Hex, Tree, Galaxy, Inspector, teclado y consola en navegador separado; nunca conectar al SQLite de integración.
+- Regresión actual: **96 Node aprobadas; 1,057 Python, 1 omitida, 0 fallidas**. El audit premium estricto deja 33 falsos positivos de botones con manejadores enlazados en JavaScript; esta fase no añadió controles.
+- Resta ejecutar QA visual/teclado con Jev instalado y recibir el contrato de Sol para retiros retenidos/revisión manual. No leer/restaurar/reindexar la base afectada; continuar con fixtures aislados.
+
 ## Data-integrity incident — current authoritative status (2026-10-21)
 
 - The existing backup contains two scans: 338 records added at 12:45:14 UTC; a second `ok` scan at 12:46:39 UTC saw zero files and marked all 338 removed. The backup passes `integrity_check` but was created after the incident and contains the deleted status.

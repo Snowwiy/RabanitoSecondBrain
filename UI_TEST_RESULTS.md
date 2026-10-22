@@ -1,5 +1,16 @@
 # UI test results
 
+## Corrección H2/H3/H4 — 2026-10-22
+
+- H3: contexto del Inspector usa una generación propia por petición, invalida solicitudes al seleccionar otro documento o limpiar la selección y valida generación, ID y selección antes de cambiar fragmentos, estado o botón. Fragmentos y relaciones siguen protegidos por la generación del Inspector; expansiones tipadas tardías del nodo A se descartan al seleccionar B.
+- H4: no se solicita una página adicional al llegar a 1,000 nodos, ni sin cursor válido o con cursor repetido. Páginas vacías o compuestas solo por duplicados terminan la paginación; una arista nueva entre nodos de páginas distintas sí cuenta como progreso. Se muestran entidades cargadas frente a candidatos y los límites de 1,000 nodos/4,000 aristas; no se elevaron.
+- H2: dashboard y acción de indexación no confirman éxito por HTTP 200. Requieren `status=ok`, `errors=0` y `finished_at`; los estados parciales, fallidos, en curso o incompletos se diferencian. Se muestran errores de fuente y la última ejecución completa que aparezca en las diez más recientes; si falla el historial no se afirma que no exista una. La API aún no expone `scan_coverage` ni `retirement_guard`, así que los retiros retenidos y la revisión manual quedan expresamente como no informados.
+- Frontend automatizado: `node --test tests/test_cyber_ui.mjs tests/test_graph_filter.mjs tests/test_knowledge_ui.mjs tests/test_neural_command_center.mjs tests/test_neural_command_center_fixture_api.mjs` — **96 aprobadas, 0 fallidas**. Incluye respuestas HTTP 200 parciales, selección rápida A→B, éxitos/errores tardíos, reset, cursores, límites exactos y excedidos, página vacía, duplicados y relación entre páginas.
+- Suite Python completa: `python -B -m unittest discover -s tests -q` — **1,057 pruebas, 1 omitida, 0 fallidas**. Las pruebas crean sus settings, fuentes y SQLite bajo `tests/.test-temp`; no usan `data/rabanito.db`.
+- `node --check web/knowledge.js` y `git diff --check` — aprobados. El audit premium estricto reporta **33 findings / 0 warnings** (`affordance.actionless-button`); no se añadieron botones. El QA de teclado en navegador permanece bloqueado junto con la revisión visual.
+- QA visual interactiva: **no ejecutada**. La skill `jev-browser-use` exige el runtime Jev y prohíbe sustituirlo por otro controlador. `C:\Users\hexan\jev-ultrafast` no está presente; no se generó captura, evidencia de consola ni resultado de lector de pantalla.
+- No se ejecutaron indexaciones, lectura del dashboard contra datos operativos, restauraciones ni escrituras. Obsidian, la base de integración y el worktree de Sol no se abrieron durante esta fase.
+
 ## Data-integrity incident investigation (2026-10-21)
 
 - I withdraw the previous claim that the integration database was unchanged. The earlier fingerprint script resolved `database_path` from the canonical/main checkout's `config/settings.json`; it did **not** fingerprint `integration/rabanito-3.0/data/rabanito.db`. This was an incorrect integrity conclusion.

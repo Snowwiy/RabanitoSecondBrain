@@ -10,7 +10,7 @@ const createRequestGate = () => { let n=0; return {begin:()=>++n,current:id=>id=
 const requestJson = async () => ({});
 const safeReference = value => { try { const url = new URL(value); return ['https:','http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null; } catch { return null; } };
 `;
-const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, safeGraphCitation, mergeBoundedTypedGraph, typedPageContinuation, typedPageLimit, TYPED_GRAPH_MAX_NODES, TYPED_GRAPH_MAX_EDGES, openAuthorizedSource, groupCommandNodes, explicitAdjacency, detectGraphCommunities, parseSafeMarkdown, validateMarkdownResponse, entityKindLabel};').toString('base64')}`);
+const ui = await import(`data:text/javascript;base64,${Buffer.from(stubs + source + '\nexport {normalizeCommandGraph, orbitCoordinates, orbitLayoutKey, hitTestOrbitNode, safeRelativePath, safeGraphCitation, mergeBoundedTypedGraph, typedPageContinuation, typedPageLimit, typedPageStopReason, canRequestTypedPage, TYPED_GRAPH_MAX_NODES, TYPED_GRAPH_MAX_EDGES, openAuthorizedSource, groupCommandNodes, explicitAdjacency, detectGraphCommunities, parseSafeMarkdown, validateMarkdownResponse, entityKindLabel};').toString('base64')}`);
 const html = fs.readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
 
 test('normalization keeps only real graph endpoints and preserves suggested relation state', () => {
@@ -90,6 +90,107 @@ test('neighbor expansion preserves the typed graph page cursor until the next pa
   assert.equal(ui.typedPageLimit(180, 160, false), 160);
   assert.match(source, /commitTypedPayload\(payload, \{append: true, updatePagination: false\}\)/);
   assert.match(source, /typedGraphRequest\(pageSize, append \? state\.typedCursor : null\)/);
+});
+
+test('typed graph stops page requests at visual caps, missing cursors and repeated cursors', () => {
+  assert.equal(ui.canRequestTypedPage({append: false}), true);
+  assert.equal(ui.canRequestTypedPage({append: true, loadedNodes: 999, hasMore: true, cursor: 'page-2'}), true);
+  assert.equal(ui.canRequestTypedPage({append: true, loadedNodes: 1000, hasMore: true, cursor: 'page-2'}), false);
+  assert.equal(ui.canRequestTypedPage({append: true, loadedNodes: 2, hasMore: true, cursor: null}), false);
+  assert.equal(ui.canRequestTypedPage({append: true, loadedNodes: 2, hasMore: true, cursor: 'page-2', seenCursors: ['page-2']}), false);
+  assert.match(source, /canRequestTypedPage\(\{append, loadedNodes: state\.graph\.nodes\.length/);
+  assert.match(source, /byId\('ncLoadMore'\)\.hidden = !state\.typedHasMore/);
+});
+
+test('typed graph page progress handles exact and exceeded node/relation fixtures without raising caps', () => {
+  const pageNodes = (start, count) => Array.from({length: count}, (_, offset) => ({id: `dependency:${start + offset}`, kind: 'dependency', title: `P${start + offset}`}));
+  const pageEdges = (nodes, count) => Array.from({length: count}, (_, index) => ({source: nodes[index % nodes.length].id, target: nodes[(index + 1) % nodes.length].id, kind: 'explicit', relation_type: `r${index}`}));
+  const exactNodes = ui.mergeBoundedTypedGraph(null, {schema_version: 1, total_candidates: 1000, nodes: pageNodes(0, 1000), edges: []});
+  assert.equal(exactNodes.nodes.length, 1000);
+  assert.equal(ui.typedPageStopReason({loadedNodes: 1000, addedNodes: 1000, hasMore: true, nextCursor: 'page-2'}), 'node-cap');
+  const overNodes = ui.mergeBoundedTypedGraph(exactNodes, {schema_version: 1, total_candidates: 1200, nodes: pageNodes(1000, 200), edges: []});
+  assert.equal(overNodes.nodes.length, 1000);
+  assert.equal(overNodes.totalMatches, 1200);
+  const edgeBaseNodes = pageNodes(0, 1000);
+  const exactEdges = ui.mergeBoundedTypedGraph(null, {schema_version: 1, nodes: edgeBaseNodes, edges: pageEdges(edgeBaseNodes, 4000)});
+  assert.equal(exactEdges.edges.length, 4000);
+  const overEdges = ui.mergeBoundedTypedGraph(exactEdges, {schema_version: 1, nodes: [], edges: [{source: edgeBaseNodes[0].id, target: edgeBaseNodes[2].id, kind: 'explicit', relation_type: 'overflow'}]});
+  assert.equal(overEdges.edges.length, 4000);
+  assert.equal(ui.typedPageStopReason({loadedNodes: 1000, loadedEdges: 4000, addedNodes: 0, addedEdges: 0, hasMore: true, nextCursor: 'page-2'}), 'node-cap');
+  assert.equal(ui.typedPageStopReason({loadedNodes: 10, loadedEdges: 4000, addedNodes: 0, addedEdges: 0, hasMore: true, nextCursor: 'page-2'}), 'edge-cap');
+  assert.equal(ui.typedPageStopReason({loadedNodes: 0, loadedEdges: 0, hasMore: true, nextCursor: 'page-2'}), 'no-progress', 'empty pages terminate instead of cycling');
+  assert.equal(ui.typedPageStopReason({loadedNodes: 1, loadedEdges: 0, addedNodes: 0, addedEdges: 0, hasMore: true, nextCursor: 'page-2'}), 'no-progress', 'duplicate-only pages terminate');
+  assert.equal(ui.typedPageStopReason({loadedNodes: 2, loadedEdges: 1, addedNodes: 1, addedEdges: 1, hasMore: true, nextCursor: 'page-3', requestedCursor: 'page-2'}), null, 'a page that adds a cross-page relation is progress');
+  assert.equal(ui.typedPageStopReason({loadedNodes: 2, loadedEdges: 1, addedNodes: 1, addedEdges: 0, hasMore: true, nextCursor: 'page-2', requestedCursor: 'page-2'}), 'repeated-cursor');
+  assert.equal(ui.typedPageStopReason({loadedNodes: 2, loadedEdges: 1, addedNodes: 1, addedEdges: 0, hasMore: true, nextCursor: null}), 'missing-cursor');
+  assert.equal(ui.TYPED_GRAPH_MAX_NODES, 1000);
+  assert.equal(ui.TYPED_GRAPH_MAX_EDGES, 4000);
+  const firstPage = ui.mergeBoundedTypedGraph(null, {schema_version: 1, total_candidates: 2, nodes: [{id: 'document:a', kind: 'document'}], edges: [], has_more: true, next_cursor: 'page-2'});
+  const secondPage = ui.mergeBoundedTypedGraph(firstPage, {schema_version: 1, total_candidates: 2, nodes: [{id: 'document:b', kind: 'document'}], edges: [{source: 'document:a', target: 'document:b', kind: 'explicit', relation_type: 'cross-page'}]});
+  assert.equal(secondPage.edges.length, 1, 'a relation to a previously loaded node is retained on the next page');
+  assert.equal(secondPage.edges[0].relation_type, 'cross-page');
+  const duplicatePage = ui.mergeBoundedTypedGraph(firstPage, {schema_version: 1, nodes: [{id: 'document:a', kind: 'document'}], edges: []});
+  assert.equal(duplicatePage.nodes.length, firstPage.nodes.length, 'duplicate nodes do not inflate the loaded entity count');
+  assert.equal(ui.typedPageStopReason({loadedNodes: duplicatePage.nodes.length, loadedEdges: duplicatePage.edges.length,
+    addedNodes: duplicatePage.nodes.length - firstPage.nodes.length, addedEdges: 0, hasMore: true, nextCursor: 'page-3'}), 'no-progress');
+});
+
+test('late context success and failure cannot overwrite a newer Inspector selection', async () => {
+  const start = source.indexOf('  async function retrieveContext() {');
+  const end = source.indexOf('\n  function setView(', start);
+  assert.notEqual(start, -1); assert.notEqual(end, -1);
+  const fnSource = source.slice(start, end).replace(/^  /gm, '');
+  const elements = new Map([
+    ['ncQuery', {value: ''}], ['ncGetContext', {disabled: false}],
+    ['ncFragments', {children: ['B existing fragments'], replaceChildren(...children) { this.children = children; }}],
+  ]);
+  let generation = 0, selectedId = 'A', calls = 0;
+  const contextGate = {begin: () => ++generation, current: id => generation === id};
+  const state = {selected: 'A', selectedDocument: {document_id: 1, title: 'A'}};
+  const deferred = [];
+  const api = () => new Promise((resolve, reject) => deferred.push({resolve, reject}));
+  const statuses = [];
+  const retrieve = new Function('state', 'contextGate', 'byId', 'api', 'setStatus', 'make', 'doc', 'safeCount',
+    `${fnSource}; return retrieveContext;`)(state, contextGate, id => elements.get(id), api,
+    (message, tone) => statuses.push([message, tone]), (tag, text) => ({tag, text}),
+    {createDocumentFragment: () => ({childNodes: [], append(...items) { this.childNodes.push(...items); }})}, String);
+  const first = retrieve(); calls++;
+  assert.equal(elements.get('ncGetContext').disabled, true);
+  contextGate.begin(); selectedId = 'B'; state.selected = selectedId; state.selectedDocument = {document_id: 2, title: 'B'};
+  elements.get('ncFragments').children = ['B fragments']; elements.get('ncGetContext').disabled = false;
+  deferred[0].resolve({fragments: [{text: 'stale A fragment', citation: 'A:1'}], characters: 13});
+  await first;
+  assert.deepEqual(elements.get('ncFragments').children, ['B fragments']);
+  assert.equal(elements.get('ncGetContext').disabled, false);
+  assert.deepEqual(statuses, []);
+
+  const second = retrieve(); calls++;
+  contextGate.begin(); selectedId = 'C'; state.selected = selectedId; state.selectedDocument = {document_id: 3, title: 'C'};
+  elements.get('ncFragments').children = ['C fragments']; elements.get('ncGetContext').disabled = false;
+  deferred[1].reject(new Error('late A network failure'));
+  await second;
+  assert.deepEqual(elements.get('ncFragments').children, ['C fragments']);
+  assert.equal(elements.get('ncGetContext').disabled, false);
+  assert.deepEqual(statuses, []);
+
+  const third = retrieve(); calls++;
+  contextGate.begin(); state.selected = null; state.selectedDocument = null;
+  elements.get('ncFragments').children = ['cleared selection'];
+  deferred[2].reject(new Error('late after reset'));
+  await third;
+  assert.deepEqual(elements.get('ncFragments').children, ['cleared selection']);
+  assert.equal(elements.get('ncGetContext').disabled, true);
+  assert.deepEqual(statuses, []);
+  assert.equal(calls, 3);
+  assert.match(source, /function renderInspectorEmpty\(\)\s*\{\s*inspectGate\.begin\(\); contextGate\.begin\(\)/);
+  assert.match(source, /async function inspectTypedEntity\(node\)\s*\{\s*const generation = inspectGate\.begin\(\); contextGate\.begin\(\)/);
+  assert.match(source, /async function inspect\(id\)[\s\S]*?const generation = inspectGate\.begin\(\); contextGate\.begin\(\);/);
+  assert.match(source, /async function loadFragments\(documentData, generation[\s\S]*?if \(!inspectGate\.current\(generation\)\) return/);
+  assert.match(source, /async function renderNeighbors\(documentData, generation[\s\S]*?if \(inspectGate\.current\(generation\)\) target\.replaceChildren\(content\)/);
+  assert.match(source, /async function inspect\(id\)[\s\S]*?byId\('ncOpenOriginal'\)\.disabled = true; byId\('ncGetContext'\)\.disabled = true;[\s\S]*?state\.selectedDocument = documentData;[\s\S]*?byId\('ncOpenOriginal'\)\.disabled = false;[\s\S]*?byId\('ncGetContext'\)\.disabled = false;/);
+  assert.match(fnSource, /if \(!isCurrent\(\)\) return/);
+  assert.match(fnSource, /catch \(error\) \{ if \(isCurrent\(\)\)/);
+  assert.match(fnSource, /finally \{ if \(isCurrent\(\)\)/);
 });
 
 test('typed graph synchronization uses an accessible app-owned confirmation dialog', () => {

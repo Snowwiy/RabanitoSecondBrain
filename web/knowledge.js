@@ -108,6 +108,23 @@ export function typedPageContinuation(current, incoming, {update = true} = {}) {
   return {hasMore: Boolean(incoming?.truncated), cursor: incoming?.nextCursor ?? null};
 }
 
+export function typedPageStopReason({loadedNodes = 0, loadedEdges = 0, addedNodes = 0, addedEdges = 0,
+  nextCursor = null, requestedCursor = null, seenCursors = [], hasMore = false,
+  maxNodes = TYPED_GRAPH_MAX_NODES, maxEdges = TYPED_GRAPH_MAX_EDGES} = {}) {
+  if (loadedNodes >= maxNodes) return 'node-cap';
+  if (loadedEdges >= maxEdges && addedNodes === 0 && addedEdges === 0) return 'edge-cap';
+  if (addedNodes === 0 && addedEdges === 0) return 'no-progress';
+  if (hasMore && (typeof nextCursor !== 'string' || !nextCursor)) return 'missing-cursor';
+  if (hasMore && (nextCursor === requestedCursor || seenCursors.includes(nextCursor))) return 'repeated-cursor';
+  return null;
+}
+
+export function canRequestTypedPage({append = false, loadedNodes = 0, hasMore = false, cursor = null, seenCursors = []} = {}) {
+  if (!append) return true;
+  return loadedNodes < TYPED_GRAPH_MAX_NODES && Boolean(hasMore)
+    && typeof cursor === 'string' && cursor.length > 0 && !seenCursors.includes(cursor);
+}
+
 export function typedPageLimit(current, requested, append = false) {
   const normalized = Math.min(200, Math.max(0, Math.floor(Number(requested) || 0)));
   return append && Number.isInteger(current) && current >= 0 && current <= 200 ? current : normalized;
@@ -441,8 +458,8 @@ export function startCommandCenter(doc, fetcher = fetch) {
   if (!root || root.dataset.initialized === 'true') return null;
   root.dataset.initialized = 'true';
   const api = (path, body) => requestJson(path, body, fetcher);
-  const graphGate = createRequestGate(), searchGate = createRequestGate(), inspectGate = createRequestGate(), markdownGate = createRequestGate();
-  const state = {graph: normalizeCommandGraph({}), graphMode: 'documents', typedHasMore: false, typedCursor: null, typedPageSize: null, typedNeighborCursors: new Map(), typedInFlight: new Set(), typedExpanded: new Set(), projects: [], selected: null, selectedDocument: null, componentFocus: null, groupFocus: null, query: '', offset: 0, nodeDirectoryPage: 0, panX: 0, panY: 0, zoom: 1, dragging: false, labels: true, reducedMotion: false};
+  const graphGate = createRequestGate(), searchGate = createRequestGate(), inspectGate = createRequestGate(), contextGate = createRequestGate(), markdownGate = createRequestGate();
+  const state = {graph: normalizeCommandGraph({}), graphMode: 'documents', typedHasMore: false, typedCursor: null, typedPageSize: null, typedSeenPageCursors: new Set(), typedNeighborCursors: new Map(), typedInFlight: new Set(), typedExpanded: new Set(), projects: [], selected: null, selectedDocument: null, componentFocus: null, groupFocus: null, query: '', offset: 0, nodeDirectoryPage: 0, panX: 0, panY: 0, zoom: 1, dragging: false, labels: true, reducedMotion: false};
   const NODE_DIRECTORY_PAGE_SIZE = 25;
   const TYPED_EXPANSION_CAP = 40;
   let derivedGraph = null, adjacencyCache = null, componentCache = null, communityCache = null;
@@ -763,8 +780,14 @@ export function startCommandCenter(doc, fetcher = fetch) {
       }));
       byId('ncExplorerCount').textContent = `${safeCount(stats.documents_active)} docs`;
       const scan = stats.latest_scan;
-      byId('ncGraphCount').textContent = `Índice · ${safeCount(stats.documents_active)} documentos · ${safeCount(stats.relations_resolved)} relaciones${scan?.finished_at ? ` · sincronizado ${String(scan.finished_at).slice(0, 16)}` : ''}`;
-    } catch { byId('ncGraphCount').textContent = 'No se pudieron leer estadísticas locales.'; }
+      const errors = Number(scan?.errors);
+      const complete = scan?.status === 'ok' && Number.isSafeInteger(errors) && errors === 0;
+      const partial = scan?.status === 'partial' || scan?.status === 'ok' && Number.isSafeInteger(errors) && errors > 0;
+      const attempt = scan ? `${complete ? 'Última ejecución completa' : partial ? 'Última ejecución parcial' : scan.status === 'running' ? 'Indexación en curso' : scan.status === 'error' || scan.status === 'failed' ? 'Última ejecución fallida' : 'Resultado de indexación no confirmado'} · ${String(scan.finished_at || scan.started_at || 'fecha no disponible').slice(0, 16)}` : 'Sin ejecución de indexación registrada';
+      const sourceErrors = Object.entries(scan?.source_summary || {}).filter(([kind, counts]) => /^[a-z][a-z0-9_-]{0,31}$/.test(kind) && Number.isSafeInteger(counts?.errors) && counts.errors > 0).map(([kind, counts]) => `${kind} (${safeCount(counts.errors)})`).slice(0, 8);
+      byId('ncIndexStatus').textContent = `${attempt}${sourceErrors.length ? ` · Fuentes con error: ${sourceErrors.join(', ')}` : ''} · La API actual no informa retiros retenidos ni revisión manual.`;
+      byId('ncGraphCount').textContent = `Índice · ${safeCount(stats.documents_active)} documentos · ${safeCount(stats.relations_resolved)} relaciones · ${attempt}`;
+    } catch { byId('ncIndexStatus').textContent = 'No se pudieron leer estadísticas locales ni el estado de indexación.'; byId('ncGraphCount').textContent = 'No se pudieron leer estadísticas locales.'; }
   }
 
   async function loadOptions() {
@@ -828,7 +851,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
     const alreadyExpanded = state.typedExpanded.has(state.selected) && !hasCursor;
     button.disabled = state.typedInFlight.size > 0 && state.typedInFlight.has(state.selected)
       || alreadyExpanded || state.typedExpanded.size >= TYPED_EXPANSION_CAP
-      || state.graph.nodes.length >= TYPED_GRAPH_MAX_NODES;
+      || state.graph.nodes.length >= TYPED_GRAPH_MAX_NODES || state.graph.edges.length >= TYPED_GRAPH_MAX_EDGES;
     button.textContent = hasCursor ? 'Cargar más vecinos' : 'Expandir vecinos';
   }
 
@@ -845,12 +868,27 @@ export function startCommandCenter(doc, fetcher = fetch) {
   }
 
   async function loadTypedGraph(limit = Number(byId('ncDensity').value), {append = false} = {}) {
+    const appendCursor = append ? state.typedCursor : null;
+    if (append && !canRequestTypedPage({append, loadedNodes: state.graph.nodes.length, hasMore: state.typedHasMore,
+      cursor: appendCursor, seenCursors: [...state.typedSeenPageCursors]})) {
+      if (state.graph.nodes.length >= TYPED_GRAPH_MAX_NODES) {
+        state.typedHasMore = false; state.typedCursor = null;
+        byId('ncLoadMore').hidden = true; byId('ncLoadMore').disabled = true;
+        byId('ncGraphCount').textContent = `${safeCount(state.graph.nodes.length)} entidades cargadas de ${safeCount(state.graph.totalMatches)} candidatos · límite visual de ${safeCount(TYPED_GRAPH_MAX_NODES)} nodos alcanzado`;
+        setStatus(`Se alcanzó el límite de ${safeCount(TYPED_GRAPH_MAX_NODES)} nodos; filtra por tipo, proyecto o fuente para explorar otro ámbito.`, 'pending');
+        return;
+      }
+      state.typedHasMore = false; state.typedCursor = null;
+      byId('ncLoadMore').hidden = true; byId('ncLoadMore').disabled = true;
+      setStatus('No hay una página siguiente válida disponible; se detuvo la paginación para evitar solicitudes repetidas.', 'pending');
+      return;
+    }
     const generation = graphGate.begin();
     const pageSize = typedPageLimit(state.typedPageSize, limit, append);
     if (!append) {
       state.typedGeneration = (state.typedGeneration || 0) + 1;
       state.typedNeighborCursors.clear(); state.typedInFlight.clear(); state.typedExpanded.clear();
-      state.typedCursor = null; state.typedHasMore = false; state.typedPageSize = pageSize;
+      state.typedCursor = null; state.typedHasMore = false; state.typedSeenPageCursors.clear(); state.typedPageSize = pageSize;
     }
     const viewGeneration = state.typedGeneration || 0;
     setStatus(append ? 'Cargando la siguiente página del Knowledge Graph tipado…' : 'Consultando la proyección tipada local…');
@@ -867,18 +905,32 @@ export function startCommandCenter(doc, fetcher = fetch) {
         setStatus('El índice tipado requiere una actualización explícita. No se escribió ni se sincronizó nada al abrir esta vista.', 'pending');
         return;
       }
+      const previousNodeCount = append ? state.graph.nodes.length : 0, previousEdgeCount = append ? state.graph.edges.length : 0;
+      if (appendCursor) state.typedSeenPageCursors.add(appendCursor);
       const incoming = commitTypedPayload(payload, {append});
+      const addedNodes = state.graph.nodes.length - previousNodeCount, addedEdges = state.graph.edges.length - previousEdgeCount;
+      const stopReason = typedPageStopReason({loadedNodes: state.graph.nodes.length, loadedEdges: state.graph.edges.length,
+        addedNodes, addedEdges, nextCursor: incoming.nextCursor, requestedCursor: appendCursor,
+        seenCursors: [...state.typedSeenPageCursors], hasMore: incoming.truncated});
+      if (stopReason) { state.typedHasMore = false; state.typedCursor = null; }
       byId('ncGraphSync').hidden = !Boolean(incoming.coverage?.requires_sync);
       byId('ncTypedGraphNote').hidden = false;
       byId('ncLoadMore').hidden = !state.typedHasMore;
       byId('ncLoadMore').textContent = 'Cargar más entidades tipadas';
-      byId('ncGraphCount').textContent = `${safeCount(state.graph.nodes.length)} nodos visibles · ${safeCount(state.graph.edges.length)} relaciones expandidas · ${safeCount(incoming.totalMatches)} candidatos${state.typedHasMore ? ' · hay más páginas' : ''}`;
+      byId('ncGraphCount').textContent = `${safeCount(state.graph.nodes.length)} entidades cargadas de ${safeCount(state.graph.totalMatches)} candidatos · ${safeCount(state.graph.edges.length)} relaciones cargadas${state.typedHasMore ? ' · hay más páginas' : stopReason === 'node-cap' ? ` · límite visual de ${safeCount(TYPED_GRAPH_MAX_NODES)} nodos` : ''}`;
       if (!state.graph.nodes.some(node => node.id === state.selected)) { state.selected = null; state.selectedDocument = null; renderInspectorEmpty(); }
       state.componentFocus = null; state.groupFocus = null;
       state.nodeDirectoryPage = 0; renderAccessibleNodeList(); renderHex(); renderTree(); drawOrbit(); updateTypedExpansionControl();
       const coverageNote = incoming.coverage?.requires_sync ? ' · algunas entradas necesitan actualización explícita' : '';
+      const paginationNote = ({
+        'node-cap': ` Se alcanzó el límite de ${safeCount(TYPED_GRAPH_MAX_NODES)} nodos; ajusta los filtros para cambiar de ámbito.`,
+        'edge-cap': ` Se alcanzó el límite de ${safeCount(TYPED_GRAPH_MAX_EDGES)} relaciones.`,
+        'no-progress': ' La página no añadió nodos ni relaciones; se detuvo la paginación para evitar solicitudes inútiles.',
+        'missing-cursor': ' La API anunció más resultados sin un cursor válido; se detuvo la paginación.',
+        'repeated-cursor': ' La API repitió un cursor; se detuvo la paginación para evitar un ciclo.',
+      })[stopReason] || '';
       setStatus(state.graph.nodes.length
-        ? `Knowledge Graph tipado: ${state.graph.nodes.length} nodos visibles. La expansión de vecinos es de un salto y tiene límites locales${coverageNote}.`
+        ? `Knowledge Graph tipado: ${safeCount(state.graph.nodes.length)} entidades cargadas de ${safeCount(state.graph.totalMatches)} candidatos. La expansión de vecinos es de un salto y tiene límites locales${coverageNote}.${paginationNote}`
         : 'No se encontraron entidades tipadas para estos filtros.', state.graph.nodes.length ? '' : 'pending');
       byId('ncPendingNote').hidden = false;
     } catch (error) {
@@ -896,13 +948,14 @@ export function startCommandCenter(doc, fetcher = fetch) {
     const cursor = state.typedNeighborCursors.get(nodeId) || null;
     if (state.typedExpanded.has(nodeId) && !cursor) return;
     if (state.typedInFlight.has(nodeId) || state.typedExpanded.size >= TYPED_EXPANSION_CAP) return;
-    if (state.graph.nodes.length >= TYPED_GRAPH_MAX_NODES) { setStatus('Se alcanzó el límite visual de nodos; reduce filtros antes de expandir más.', 'pending'); return; }
+    if (state.graph.nodes.length >= TYPED_GRAPH_MAX_NODES) { setStatus(`Se alcanzó el límite visual de ${safeCount(TYPED_GRAPH_MAX_NODES)} nodos; reduce filtros antes de expandir más.`, 'pending'); return; }
+    if (state.graph.edges.length >= TYPED_GRAPH_MAX_EDGES) { setStatus(`Se alcanzó el límite visual de ${safeCount(TYPED_GRAPH_MAX_EDGES)} relaciones; actualiza los filtros antes de expandir más.`, 'pending'); return; }
     const key = `${nodeId}\u0000${cursor || ''}`, generation = state.typedGeneration;
     state.typedInFlight.add(nodeId); updateTypedExpansionControl();
     setStatus(`Expandiendo un salto desde ${state.graph.nodes.find(node => node.id === nodeId)?.title || 'la entidad'}…`);
     try {
       const payload = await api('/api/knowledge-graph/neighbors', {...typedGraphRequest(200, cursor), id: nodeId});
-      if (state.graphMode !== 'typed' || generation !== state.typedGeneration) return;
+      if (state.graphMode !== 'typed' || generation !== state.typedGeneration || state.selected !== nodeId) return;
       if (payload.anchor_visible !== true) { state.typedExpanded.add(nodeId); state.typedNeighborCursors.delete(nodeId); setStatus('La entidad ya no está visible en el ámbito autorizado. Actualiza la página del grafo.'); return; }
       commitTypedPayload(payload, {append: true, updatePagination: false});
       state.typedExpanded.add(nodeId);
@@ -912,7 +965,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
       state.nodeDirectoryPage = 0; renderAccessibleNodeList(); renderHex(); renderTree(); drawOrbit(); updateTypedExpansionControl();
       setStatus(`${safeCount(payload.edges?.length || 0)} relaciones cargadas para la entidad seleccionada · clasificación y cita conservadas.`);
     } catch (error) {
-      if (generation === state.typedGeneration) setStatus(`No se pudieron cargar los vecinos: ${String(error.message || 'error de API').slice(0, 160)}. La proyección no se modificó.`, 'error');
+      if (generation === state.typedGeneration && state.selected === nodeId) setStatus(`No se pudieron cargar los vecinos: ${String(error.message || 'error de API').slice(0, 160)}. La proyección no se modificó.`, 'error');
     } finally {
       state.typedInFlight.delete(nodeId); updateTypedExpansionControl();
     }
@@ -1176,6 +1229,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
   }
 
   function renderInspectorEmpty() {
+    inspectGate.begin(); contextGate.begin();
     byId('ncInspectorType').textContent = 'Sin selección';
     byId('ncInspectorAnnouncement').textContent = 'No hay documento seleccionado.';
     byId('ncInspectorBody').replaceChildren(make('p', 'Selecciona un nodo, resultado de búsqueda o elemento de una comunidad. Se mostrarán metadatos locales y fragmentos citados.', 'nc-inspector-intro'));
@@ -1192,7 +1246,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
   }
 
   async function inspectTypedEntity(node) {
-    const generation = inspectGate.begin();
+    const generation = inspectGate.begin(); contextGate.begin();
     state.selected = node.id; state.selectedDocument = null;
     updateAccessibleNodeSelection(); updateTypedExpansionControl();
     resetMarkdownReader('Esta entidad no es un documento autorizado para lectura Markdown.');
@@ -1251,7 +1305,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
     }
     state.selected = selectedNode?.id ?? String(id);
     updateAccessibleNodeSelection();
-    const generation = inspectGate.begin();
+    const generation = inspectGate.begin(); contextGate.begin();
     state.selectedDocument = null; resetMarkdownReader('Selecciona un documento para consultar el lector completo.');
     updateTypedExpansionControl();
     byId('ncInspectorType').textContent = state.graph.typed ? `${entityKindLabel(selectedNode?.entity_kind || 'document')} · ${documentId}` : `Documento ${documentId}`;
@@ -1259,11 +1313,13 @@ export function startCommandCenter(doc, fetcher = fetch) {
     byId('ncInspectorBody').replaceChildren(make('p', 'Leyendo metadatos del índice local…', 'nc-inspector-intro'));
     byId('ncFragments').replaceChildren(make('span', 'Recuperando fragmentos citados…', 'meta'));
     byId('ncNeighbors').replaceChildren(make('span', 'Cargando relaciones disponibles…', 'meta'));
-    byId('ncOpenOriginal').disabled = false; byId('ncGetContext').disabled = false;
+    byId('ncOpenOriginal').disabled = true; byId('ncGetContext').disabled = true;
     try {
       const documentData = await api(`/api/doc/${documentId}`);
       if (!inspectGate.current(generation)) return;
       state.selectedDocument = documentData;
+      byId('ncOpenOriginal').disabled = false;
+      byId('ncGetContext').disabled = false;
       byId('ncReadMarkdown').disabled = false;
       byId('ncInspectorAnnouncement').textContent = `Metadatos del documento ${documentId} cargados. Los fragmentos citados y relaciones están disponibles en el inspector.`;
       const body = byId('ncInspectorBody'), tags = Array.isArray(documentData.tags) ? documentData.tags : [];
@@ -1278,6 +1334,7 @@ export function startCommandCenter(doc, fetcher = fetch) {
       body.append(make('p', 'Los fragmentos siguientes proceden de recuperación citada. La lectura completa usa un endpoint ID-only del servidor cuando está disponible; abrir la fuente sigue pasando por la autorización local.', 'nc-inspector-intro'));
       byId('ncSourceRef').textContent = `${documentData.source_kind || 'fuente local'} · ${documentData.relative_path || 'referencia relativa no disponible'}${documentData.mtime_iso ? ` · actualizado ${documentData.mtime_iso}` : ''}`;
       await loadFragments(documentData, generation);
+      if (!inspectGate.current(generation) || state.selected !== (selectedNode?.id ?? String(id))) return;
       await renderNeighbors(documentData, generation);
     } catch (error) {
       if (inspectGate.current(generation)) {
@@ -1285,6 +1342,8 @@ export function startCommandCenter(doc, fetcher = fetch) {
         byId('ncFragments').textContent = 'No hay fragmentos disponibles.';
         byId('ncNeighbors').textContent = 'No hay relaciones disponibles.';
         byId('ncReadMarkdown').disabled = true;
+        byId('ncOpenOriginal').disabled = true;
+        byId('ncGetContext').disabled = true;
         byId('ncInspectorAnnouncement').textContent = `No se pudieron cargar los metadatos del documento ${documentId}.`;
       }
     }
@@ -1378,18 +1437,22 @@ export function startCommandCenter(doc, fetcher = fetch) {
   async function retrieveContext() {
     const item = state.selectedDocument;
     if (!item) return;
+    const documentId = Number(item.document_id ?? state.selected), selectedId = state.selected, generation = contextGate.begin();
+    const isCurrent = () => contextGate.current(generation) && state.selected === selectedId
+      && Number(state.selectedDocument?.document_id ?? state.selected) === documentId;
     const query = byId('ncQuery').value.trim() || item.title || '';
     if (!query) { setStatus('Escribe una pregunta para recuperar contexto citado.', 'pending'); return; }
     byId('ncGetContext').disabled = true;
     try {
       const payload = await api('/api/context', {q: query.slice(0, 500), limit: 8, max_chars: 6000, source: item.source_kind || null, category: item.category || null});
+      if (!isCurrent()) return;
       const fragments = Array.isArray(payload.fragments) ? payload.fragments : [];
       const content = doc.createDocumentFragment();
       for (const fragment of fragments) content.append(make('pre', fragment.text || '', 'nc-fragment'), make('p', fragment.citation || `${fragment.relative_path || '?'}:${fragment.line_start || '?'}-${fragment.line_end || '?'}`, 'nc-inspector-meta'));
       byId('ncFragments').replaceChildren(content.childNodes.length ? content : make('span', 'No se encontraron fragmentos citables.', 'meta'));
       setStatus(`${fragments.length} fragmentos · ${safeCount(payload.characters)} caracteres · límite solicitado 6,000.`, fragments.length ? '' : 'pending');
-    } catch (error) { setStatus(`No se pudo recuperar contexto: ${String(error.message || 'error').slice(0, 160)}`, 'error'); }
-    finally { byId('ncGetContext').disabled = false; }
+    } catch (error) { if (isCurrent()) setStatus(`No se pudo recuperar contexto: ${String(error.message || 'error').slice(0, 160)}`, 'error'); }
+    finally { if (isCurrent()) byId('ncGetContext').disabled = false; }
   }
 
   function setView(name) {

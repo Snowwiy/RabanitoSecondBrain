@@ -111,6 +111,43 @@ el mismo origen loopback; no se habilita CORS para unir worktrees.
 
 ## Contrato del Neural Command Center
 
+### Estado de indexación expuesto al dashboard
+
+`GET /api/stats` (`latest_scan`), `GET /api/scans` y `POST /api/index` reutilizan
+la proyección compacta de `project_scan_summary()`: `status`, `errors`, marcas
+de tiempo, contadores y `source_summary` acotado. `HTTP 200` por sí solo no
+significa que el ciclo haya terminado correctamente. El frontend considera una
+ejecución completa solo si `status` es `ok`, `errors` es cero y existe
+`finished_at`; `partial`, `error`, `failed`, `running` o campos faltantes se
+presentan como parciales, fallidos, en curso o no confirmados. Los errores por
+fuente se muestran usando las claves y contadores sanitizados del resumen, sin
+inferir que una fuente concreta esté inaccesible cuando el contrato solo dice
+que tuvo errores.
+
+El historial de `/api/scans` está limitado a diez resultados recientes. La UI
+puede identificar la última ejecución completa dentro de esa ventana, pero si no
+aparece una no afirma que nunca haya existido; si falla la lectura del historial,
+la UI lo reporta como no consultable y no como ausencia. La proyección HTTP no expone
+`scan_coverage` ni `retirement_guard`; por tanto no permite indicar el conteo de
+retiros retenidos ni si una revisión manual está pendiente. El dashboard señala
+explícitamente esa ausencia. Completar H2 requiere que el contrato de Sol publique
+campos sanitizados para cobertura, estado de la protección, retiros retenidos y
+revisión requerida. No se deben inferir ni inventar esos valores a partir de
+`removed`, `skipped`, `errors` o `status`.
+
+### Protección de respuestas asíncronas del Inspector y páginas del grafo
+
+Cada selección del Inspector invalida el contexto de recuperación anterior y
+usa una generación dedicada; respuestas, errores y `finally` tardíos solo pueden
+actualizar el DOM si generación, ID y selección siguen vigentes. Fragmentos y
+relaciones permanecen protegidos por la generación del inspector compartida.
+La paginación tipada conserva los cursores de página separados de los cursores de
+vecinos y no solicita una página si alcanzó 1,000 nodos, el cursor falta/se repite
+o la respuesta anterior no añadió nodos ni relaciones. El cliente comunica
+entidades cargadas frente a candidatos disponibles (estos últimos son el conteo
+del backend antes de su verificación viva); los límites locales siguen en 1,000
+nodos y 4,000 aristas.
+
 | Vista/operación | Contrato | Comportamiento y límite |
 |---|---|---|
 | Dashboard y filtros | `GET /api/health`, `/api/stats`, `/api/projects`, `/api/categories`, `/api/tags`, `/api/sources`; `POST /api/search`, `/api/context` | Usa inventario y citas del índice. Consultas privadas van en JSON POST. Valores se renderizan como texto. |

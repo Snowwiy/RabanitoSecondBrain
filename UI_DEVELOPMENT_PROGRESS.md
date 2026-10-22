@@ -1,5 +1,15 @@
 # UI development progress
 
+## Corrección de coherencia H2/H3/H4 (2026-10-22)
+
+- H3 implementado en `web/knowledge.js`: un `contextGate` dedicado invalida cada recuperación anterior cuando cambia/limpia la selección. Tanto éxito como error/finally requieren generación, ID y selección actuales. La carga de metadatos mantiene deshabilitado el control hasta que el documento seleccionado esté listo. Fragmentos, relaciones y expansión tipada mantienen protección equivalente.
+- H4 implementado con cursor de página y conjunto de cursores consumidos separados de los de vecinos. `canRequestTypedPage` bloquea solicitudes improductivas en el límite, sin cursor o con cursor repetido. `typedPageStopReason` detiene página vacía, duplicada o sin avance; preserva relación nueva cross-page. La UI indica cargados/candidatos y topes 1,000/4,000.
+- H2 parcialmente resuelto con los campos del contrato vigente: el dashboard solo marca ejecución completa con estado `ok`, cero errores y `finished_at`; separa partial/error/running/incompleto, muestra errores por fuente, refleja HTTP 200 parcial y busca la última completa dentro de diez registros. El contrato HTTP actual no publica `scan_coverage`/`retirement_guard`; exactitud de retiros retenidos y revisión manual sigue bloqueada hasta el contrato de Sol.
+- Añadidos casos de regresión de Node para asincronía del Inspector, límites/cursor/avance del grafo y proyección de estado de indexación.
+- Regresión final: **96 pruebas JavaScript aprobadas**; **1,057 pruebas Python, 1 omitida, 0 fallidas**; sintaxis de `web/knowledge.js` y `git diff --check` aprobados. La suite usa fuentes y SQLite en `tests/.test-temp`, no el índice operativo.
+- El audit premium estricto informa 33 violaciones `affordance.actionless-button` y 0 advertencias; los controles pertenecen a la interfaz existente y se enlazan mediante manejadores JavaScript, que el detector estático no reconoce. Esta fase no añade botones.
+- QA visual y lector de pantalla no ejecutados: falta el runtime de Jev requerido por `jev-browser-use`. Las pruebas interactivas manuales quedan pendientes.
+
 ## Data-integrity incident investigation (2026-10-21)
 
 - Corrected the prior QA report: its DB fingerprint compared the main checkout, not `integration/rabanito-3.0/data/rabanito.db`. The old statement does not prove the integration DB was intact.

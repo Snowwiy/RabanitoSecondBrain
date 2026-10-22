@@ -56,6 +56,11 @@ const auditSummaryEnd = html.indexOf("\n    async function runAction(", auditSum
 assert.notEqual(auditSummaryStart, -1, "auditSummary() must exist in the dashboard");
 assert.notEqual(auditSummaryEnd, -1, "runAction() must follow auditSummary()");
 const auditSummarySource = html.slice(auditSummaryStart, auditSummaryEnd);
+const runActionStart = html.indexOf("    async function runAction(", auditSummaryEnd);
+const runActionEnd = html.indexOf("\n    function statCard(", runActionStart);
+assert.notEqual(runActionStart, -1, "runAction() must exist in the dashboard");
+assert.notEqual(runActionEnd, -1, "statCard() must follow runAction()");
+const runActionSource = html.slice(runActionStart, runActionEnd);
 const sourceFiltersStart = html.indexOf("    function renderSourceFilters(sources){");
 const sourceFiltersEnd = html.indexOf("\n    async function loadProjectPolicies()", sourceFiltersStart);
 assert.notEqual(sourceFiltersStart, -1, "renderSourceFilters() must exist in the dashboard");
@@ -300,12 +305,13 @@ test("dashboard scan history is bounded, refreshable, and renders untrusted fiel
     (id) => elements.get(id), document,
   );
   const scans = Array.from({ length: 12 }, (_, index) => ({
-    scan_id: index + 1, status: "ok", started_at: `2026-10-13T00:00:${String(index).padStart(2, "0")}+00:00`,
+    scan_id: index + 1, status: "ok", started_at: `2026-10-13T00:00:${String(index).padStart(2, "0")}+00:00`, finished_at: `2026-10-13T00:00:${String(index).padStart(2, "0")}+00:00`,
     added: index, modified: 1, unchanged: 20, removed: 0, skipped: 0, errors: 0, duration_ms: 12.4,
     absolute_path: "C:\\PRIVATE_PATH_SENTINEL", error_message: "PRIVATE_ERROR_SENTINEL",
   }));
   scans[1].errors = 2;
   scans[3].status = "partial";
+  scans[5].status = "error";
   scans[3].source_summary = { obsidian: { errors: 1 }, "../PRIVATE_PATH_SENTINEL": { errors: 99 } };
   scans[4].source_summary_truncated = true;
   scans[2].status = "<img src=x onerror=alert(1)>";
@@ -314,10 +320,11 @@ test("dashboard scan history is bounded, refreshable, and renders untrusted fiel
   const text = list.children.flatMap((item) => [item.textContent, ...item.children.map((child) => child.textContent)]).join(" ");
   assert.equal(list.children.length, 10, "the UI must cap rendering even if an endpoint returns more records");
   assert.match(elements.get("scanHistoryStatus").textContent, /10 ejecuciones recientes/);
-  assert.match(text, /#1 · Completado/);
-  assert.match(text, /#2 · Completado con errores/);
+  assert.match(text, /#1 · Completo confirmado/);
+  assert.match(text, /#2 · Parcial · errores detectados/);
   assert.match(text, /#3 · Estado desconocido/);
   assert.match(text, /#4 · Parcial · revisar fuentes/);
+  assert.match(text, /#6 · Falló/);
   assert.match(text, /Fuentes con error: obsidian \(1\)/);
   assert.match(text, /Detalle de fuentes truncado/);
   assert.doesNotMatch(text, /PRIVATE_PATH_SENTINEL|PRIVATE_ERROR_SENTINEL|onerror=|\.\.\//);
@@ -328,9 +335,63 @@ test("dashboard scan history is bounded, refreshable, and renders untrusted fiel
   assert.match(html, /\$\('scanHistoryRefresh'\)\.addEventListener\('click',loadScans\)/);
   assert.match(html, /api\('\/api\/scans'\)/);
   assert.match(html, /async function loadStats\(\).*await loadScans\(\)/);
-  assert.match(html, /Último índice: \$\{scanStatusLabel\(s\.latest_scan\)\}/);
+  assert.match(html, /Último intento: \$\{scanStatusLabel\(latest\)\}/);
   render([]);
   assert.match(elements.get("scanHistoryStatus").textContent, /No hay indexaciones/);
+});
+
+test("index status requires an explicit clean result and reports unavailable retirement details", () => {
+  const helpers = new Function("scanMetric", "scanDuration", `${scanHistorySource}; return {scanIsComplete,scanStatusLabel,scanActionMessage,latestCompleteScan};`)(
+    (value) => String(value ?? "?"), (value) => String(value ?? "?"),
+  );
+  const complete = {scan_id: 8, status: "ok", errors: 0, finished_at: "2026-10-22T10:00:00Z", added: 1, modified: 2, unchanged: 3, removed: 0};
+  const partial = {scan_id: 9, status: "partial", errors: 1, finished_at: "2026-10-22T11:00:00Z", added: 1, modified: 0, unchanged: 2, removed: 7, source_summary: {obsidian: {errors: 1}}};
+  const blocked = {status: "ok", errors: 2};
+  const unknown = {status: "ok"};
+  const unfinished = {status: "ok", errors: 0, started_at: "2026-10-22T09:59:00Z"};
+  assert.equal(helpers.scanIsComplete(complete), true);
+  assert.equal(helpers.scanIsComplete(partial), false);
+  assert.equal(helpers.scanIsComplete(blocked), false);
+  assert.equal(helpers.scanIsComplete(unknown), false);
+  assert.equal(helpers.scanIsComplete(unfinished), false);
+  assert.match(helpers.scanStatusLabel(partial), /Parcial/);
+  assert.match(helpers.scanStatusLabel(blocked), /Parcial/);
+  assert.match(helpers.scanStatusLabel(unknown), /No confirmado/);
+  assert.match(helpers.scanStatusLabel(unfinished), /fecha de finalización/);
+  assert.match(helpers.scanStatusLabel({status: "running"}), /En curso/);
+  assert.match(helpers.scanActionMessage(complete), /^Sincronización completa confirmada/);
+  const partialMessage = helpers.scanActionMessage(partial);
+  assert.match(partialMessage, /no confirmada como completa/);
+  assert.match(partialMessage, /Fuentes con error: obsidian \(1\)/);
+  assert.match(partialMessage, /7 retiros reportados/);
+  assert.match(partialMessage, /no expone retiros retenidos ni revisión manual/);
+  assert.match(helpers.scanActionMessage(blocked), /no confirmada como completa/);
+  assert.match(helpers.scanActionMessage({status: "error", errors: 1}), /no confirmada como completa/);
+  assert.equal(helpers.latestCompleteScan([partial, complete]), complete);
+  assert.equal(helpers.latestCompleteScan([partial]), null);
+  assert.equal(helpers.latestCompleteScan([...Array(10).fill(partial), complete]), null, "a completed scan outside the API's ten recent entries is not presented as last known");
+  assert.match(runActionSource, /scanActionMessage\(data\)/);
+  assert.doesNotMatch(runActionSource, /Índice actualizado:/);
+});
+
+test("HTTP 200 partial indexing response remains partial in the dashboard operation flow", async () => {
+  const elements = new Map([["operationStatus", {textContent: ""}]]);
+  const calls = [];
+  const scanHelpers = new Function("scanMetric", "scanDuration", `${scanHistorySource}; return {scanActionMessage};`)(String, String);
+  const run = new Function("$", "fetch", "loadOptions", "loadStats", "loadGraph", "loadDecisions", "auditSummary", "renderAuditFindings", "scanActionMessage",
+    `${runActionSource}; return runAction;`)(
+    (id) => elements.get(id),
+    async () => ({ok: true, json: async () => ({status: "partial", errors: 1, added: 0, modified: 0, unchanged: 0, removed: 0, source_summary: {projects: {errors: 1}}})}),
+    async () => calls.push("options"), async () => calls.push("stats"), async () => calls.push("graph"), async () => calls.push("decisions"),
+    () => "audit", () => {}, scanHelpers.scanActionMessage,
+  );
+  const button = {disabled: false};
+  await run("/api/index", button, "Sincronizando");
+  assert.match(elements.get("operationStatus").textContent, /^Sincronización no confirmada como completa \(Parcial/);
+  assert.match(elements.get("operationStatus").textContent, /Fuentes con error: projects \(1\)/);
+  assert.match(elements.get("operationStatus").textContent, /no expone retiros retenidos ni revisión manual/);
+  assert.deepEqual(calls, ["options", "stats", "graph", "decisions"]);
+  assert.equal(button.disabled, false);
 });
 
 test("dashboard stats summary executes and calls out a partial latest scan", async () => {
@@ -343,7 +404,7 @@ test("dashboard stats summary executes and calls out a partial latest scan", asy
     (value) => String(value),
   );
   const run = new Function(
-    "$", "api", "loadScans", "loadDocumentChanges", "scanStatusLabel", "scanSourceFailures", "statCard",
+    "$", "api", "loadScans", "loadDocumentChanges", "scanStatusLabel", "scanSourceFailures", "statCard", "latestCompleteScan", "scanMetric",
     `${statsLoaderSource}; return loadStats;`,
   )(
     (id) => elements.get(id),
@@ -359,18 +420,30 @@ test("dashboard stats summary executes and calls out a partial latest scan", asy
         },
       };
     },
-    async () => calls.push("scans"),
+    async () => { calls.push("scans"); return [{status: "partial", errors: 1}]; },
     async () => calls.push("changes"),
     (scan) => scan.status === "partial" ? "Parcial · revisar fuentes" : "Estado desconocido",
     sourceFailures,
     (value, label) => `<span>${value}:${label}</span>`,
+    (scans) => (Array.isArray(scans) ? scans.slice(0, 10) : []).find((scan) => scan.status === "ok" && scan.errors === 0) || null,
+    (value) => String(value ?? "?"),
   );
   await run();
-  assert.match(elements.get("scan").textContent, /^Último índice: Parcial · revisar fuentes · 2026-10-13T12:30:00Z/);
+  assert.match(elements.get("scan").textContent, /^Último intento: Parcial · revisar fuentes · 2026-10-13T12:30:00Z/);
   assert.match(elements.get("scan").textContent, /Fuentes con error: obsidian \(1\)/);
   assert.doesNotMatch(elements.get("scan").textContent, /<img/);
   assert.match(elements.get("scan").textContent, /· =337 · Fuentes con error:/);
+  assert.match(elements.get("scan").textContent, /No aparece una sincronización completa entre las 10 ejecuciones recientes/);
+  assert.match(elements.get("scan").textContent, /Retiros retenidos\/revisión manual: no informados/);
   assert.deepEqual(calls, ["/api/stats", "scans", "changes"]);
+  const unavailable = new Function(
+    "$", "api", "loadScans", "loadDocumentChanges", "scanStatusLabel", "scanSourceFailures", "statCard", "latestCompleteScan", "scanMetric",
+    `${statsLoaderSource}; return loadStats;`,
+  )((id) => elements.get(id), async () => ({documents_active: 0, relations_resolved: 0, relations_suggested: 0, projects: 0, links_broken: 0, links_directories: 0, unique_tags: 0, latest_scan: null}),
+    async () => null, async () => {}, () => "Estado desconocido", () => "", () => "", () => null, (value) => String(value ?? "?"));
+  await unavailable();
+  assert.match(elements.get("scan").textContent, /No se pudo consultar el historial reciente/);
+  assert.doesNotMatch(elements.get("scan").textContent, /No aparece una sincronización completa/);
 });
 
 test("dashboard document changes are bounded, source-cited, and rendered only as text", () => {
